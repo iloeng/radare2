@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2008-2022 - nibble, pancake, thestr4ng3r */
+/* radare - LGPL - Copyright 2008-2023 - nibble, pancake, thestr4ng3r */
 
 #include <r_anal.h>
 #include <r_core.h>
@@ -10,7 +10,6 @@ static bool item_matches_filter(RAnalMetaItem *item, RAnalMetaType type, R_NULLA
 typedef struct {
 	RAnalMetaType type;
 	const RSpace *space;
-
 	RIntervalNode *node;
 } FindCtx;
 
@@ -222,8 +221,9 @@ R_API RPVector *r_meta_get_all_intersect(RAnal *a, ut64 start, ut64 size, RAnalM
 R_API const char *r_meta_type_tostring(int type) {
 	// XXX: use type as '%c'
 	switch (type) {
-	case R_META_TYPE_DATA: return "Cd";
+	case R_META_TYPE_BIND: return "Cb";
 	case R_META_TYPE_CODE: return "Cc";
+	case R_META_TYPE_DATA: return "Cd";
 	case R_META_TYPE_STRING: return "Cs";
 	case R_META_TYPE_FORMAT: return "Cf";
 	case R_META_TYPE_MAGIC: return "Cm";
@@ -260,13 +260,15 @@ R_API void r_meta_print(RAnal *a, RAnalMetaItem *d, ut64 start, ut64 size, int r
 			str = r_str_escape (d->str);
 		}
 	}
-	if (str || d->type == R_META_TYPE_DATA) {
+	if (str || d->type == R_META_TYPE_DATA || d->type == R_META_TYPE_BIND) {
 		if (d->type == R_META_TYPE_STRING && !*str) {
 			free (str);
 			return;
 		}
 		if (!str) {
 			pstr = "";
+		} else if (d->type == 'b') {
+			pstr = str;
 		} else if (d->type == 'f') {
 			pstr = str;
 		} else if (d->type == 's') {
@@ -435,6 +437,13 @@ R_API void r_meta_print(RAnal *a, RAnalMetaItem *d, ut64 start, ut64 size, int r
 					}
 				}
 				break;
+			case R_META_TYPE_BIND:
+				if (rad) {
+					a->cb_printf ("Cb 0x%08" PFMT64x " %s\n", start, pstr);
+				} else {
+					a->cb_printf ("Cb 0x%08" PFMT64x " %s\n", start, pstr);
+				}
+				break;
 			case R_META_TYPE_VARTYPE:
 				if (rad) {
 					a->cb_printf ("%s %s @ 0x%08" PFMT64x "\n",
@@ -538,7 +547,11 @@ static void print_meta_list(RAnal *a, int type, int rad, ut64 addr, const char *
 
 beach:
 	if (t && tq) {
-		r_table_query (t, tq);
+		if (!r_table_query (t, tq)) {
+			pj_free (pj);
+			r_table_free (t);
+			return;
+		}
 	}
 	if (!tq || !strstr (tq, "?")) {
 		if (t) {
@@ -548,8 +561,6 @@ beach:
 		} else if (pj) {
 			pj_end (pj);
 			r_cons_printf ("%s\n", pj_string (pj));
-			pj_free (pj);
-			pj = NULL;
 		}
 	}
 	pj_free (pj);

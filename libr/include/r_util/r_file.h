@@ -8,7 +8,11 @@ extern "C" {
 #include <r_util/r_mem.h>
 
 #ifndef SHELL_PATH
+#if TERMUX_BUILD
+#define SHELL_PATH "/data/data/com.termux/files/usr/bin/sh"
+#else
 #define SHELL_PATH "/bin/sh"
+#endif
 #endif
 
 #ifndef TERMUX_PREFIX
@@ -43,6 +47,7 @@ R_API ut8 *r_inflate_raw(const ut8 *src, int srcLen, int *srcConsumed, int *dstL
 R_API ut8 *r_inflate_lz4(const ut8 *src, int srcLen, int *consumed, int *dstLen);
 R_API ut8 *r_file_gzslurp(const char *str, int *outlen, int origonfail);
 R_API char *r_stdin_slurp(int *sz);
+R_API char *r_stdin_readline(int *sz);
 R_API char *r_file_slurp(const char *str, R_NULLABLE size_t *usz);
 R_API char *r_file_slurp_range(const char *str, ut64 off, int sz, int *osz);
 R_API char *r_file_slurp_random_line(const char *file);
@@ -71,7 +76,7 @@ R_API RList *r_file_lsrf(const char *dir);
 R_API bool r_file_is_newer(const char *f1, const char *f2);
 R_API bool r_file_rm_rf(const char *dir);
 R_API R_MUSTUSE char *r_file_home(const char *str);
-// R2_580: implement r_file_homef() for format string purposes
+R_API R_MUSTUSE char *r_file_homef(const char *fmt, ...);
 
 // XDG
 R_API char *r_xdg_configdir(const char *s);

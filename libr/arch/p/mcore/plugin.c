@@ -11,8 +11,8 @@ static bool decode(RArchSession *session, RAnalOp *op, RArchDecodeMask mask) {
 	mcore_t* instr = NULL;
 
 	if (mcore_init (&handle, buf, len)) {
-		R_LOG_ERROR ("mcore: bad or invalid data");
-		return -1;
+		// R_LOG_ERROR ("mcore: bad or invalid data");
+		return false;
 	}
 
 	op->size = 2;
@@ -46,7 +46,7 @@ static bool decode(RArchSession *session, RAnalOp *op, RArchDecodeMask mask) {
 		}
 		mcore_free (instr);
 	}
-	return op->size;
+	return true;
 }
 
 static char *regs(RArchSession *as) {
@@ -119,11 +119,13 @@ static int archinfo(RArchSession *s, ut32 q) {
 	return 2;
 }
 
-RArchPlugin r_arch_plugin_mcore = {
-	.name = "mcore",
-	.desc = "MCore analysis plugin",
+const RArchPlugin r_arch_plugin_mcore = {
+	.meta = {
+		.name = "mcore",
+		.desc = "MCore analysis plugin",
+		.license = "LGPL3",
+	},
 	.arch = "mcore",
-	.license = "LGPL3",
 	.bits = 32,
 	.cpus = "mcore,c-sky",
 	.endian = R_SYS_ENDIAN_BIG,

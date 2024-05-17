@@ -80,8 +80,12 @@ static ut64 shm__lseek(RIO *io, RIODesc *fd, ut64 offset, int whence) {
 		}
 		break;
 	case SEEK_END:
-		io->off = ((int)shm->size > 0) ? shm->size : UT64_MAX;
-		io->off += (int)offset;
+		if ((int)shm->size > 0) {
+			io->off = shm->size + (int)offset;
+		} else {
+			// UT64_MAX means error
+			io->off = UT64_MAX - 1;
+		}
 		break;
 	}
 	return io->off;
@@ -130,11 +134,13 @@ static RIODesc *shm__open(RIO *io, const char *pathname, int rw, int mode) {
 }
 
 RIOPlugin r_io_plugin_shm = {
-	.name = "shm",
-	.desc = "Shared memory resources plugin",
+	.meta = {
+		.name = "shm",
+		.desc = "Shared memory resources plugin",
+		.license = "MIT",
+		.author = "pancake",
+	},
 	.uris = "shm://",
-	.license = "MIT",
-	.author = "pancake",
 	.open = shm__open,
 	.close = shm__close,
 	.read = shm__read,
@@ -145,8 +151,10 @@ RIOPlugin r_io_plugin_shm = {
 
 #else
 RIOPlugin r_io_plugin_shm = {
-	.name = "shm",
-	.desc = "shared memory resources (not for this platform)",
+	.meta = {
+		.name = "shm",
+		.desc = "shared memory resources (not for this platform)",
+	}
 };
 #endif
 

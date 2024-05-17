@@ -20,15 +20,15 @@
    Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston,
    MA 02110-1301, USA.  */
 
-#include "sysdep.h"
+#include "../../../include/sysdep.h"
 
-#include "disas-asm.h"
+#include "../../../include/disas-asm.h"
 #include "opcode-arm.h"
 // #include "opcode/arm.h"
-#include "opintl.h"
+#include "../../../include/opintl.h"
 // #include "safe-ctype.h"
 #ifndef _MSC_VER
-#include "libiberty.h"
+#include "../../../include/libiberty.h"
 #else
 #include <stdlib.h>
 #define XNEWVEC(T, N)		((T *) malloc (sizeof (T) * (N)))
@@ -6426,21 +6426,6 @@ mapping_symbol_for_insn (bfd_vma pc, struct disassemble_info *info,
   *map_symbol = type;
   return found;
 }
-
-/* Given a bfd_mach_arm_XXX value, this function fills in the fields
-   of the supplied arm_feature_set structure with bitmasks indicating
-   the support base architectures and coprocessor extensions.
-
-   FIXME: This could more efficiently implemented as a constant array,
-   although it would also be less robust.  */
-
-#define ARM_MERGE_FEATURE_SETS(TARG,F1,F2)      \
-  do {                                          \
-    (TARG).core[0] = (F1).core[0] | (F2).core[0];\
-    (TARG).core[1] = (F1).core[1] | (F2).core[1];\
-    (TARG).coproc = (F1).coproc | (F2).coproc;  \
-  } while (0)
-
 
 static void
 select_arm_features (unsigned long mach,

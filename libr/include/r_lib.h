@@ -1,8 +1,10 @@
 #ifndef R2_LIB_H
 #define R2_LIB_H
 
-#include "r_types.h"
-#include "r_list.h"
+#include <r_types.h>
+#include <r_list.h>
+#include <r_lib.h>
+#include <sdb/ht_pp.h>
 
 #if R2__UNIX__ && WANT_DYLINK
 #include <dlfcn.h>
@@ -48,6 +50,7 @@ typedef struct r_plugin_meta_t {
 	char *license;
 	RPluginStatus status;
 } RPluginMeta;
+// rename to RLibPluginMeta ?
 
 /* store list of loaded plugins */
 typedef struct r_lib_plugin_t {
@@ -58,10 +61,7 @@ typedef struct r_lib_plugin_t {
 	void *dl_handler; // DL HANDLER
 	void (*free)(void *data);
 #if 0
-	char *author;
-	char *version;
-	char *license;
-	RLibStatus status;
+	RPluginMeta meta;
 #endif
 } RLibPlugin;
 
@@ -109,6 +109,8 @@ enum {
 	R_LIB_TYPE_LAST
 };
 
+typedef int (*RLibLifeCycleCallback)(RLibPlugin *, void *, void *);
+
 typedef struct r_lib_t {
 	/* linked list with all the plugin handler */
 	/* only one handler per handler-id allowed */
@@ -117,7 +119,10 @@ typedef struct r_lib_t {
 	char *symnamefunc;
 	RList /*RLibPlugin*/ *plugins;
 	RList /*RLibHandler*/ *handlers;
+	RLibHandler *handlers_bytype[R_LIB_TYPE_LAST];
 	bool ignore_version;
+	// hashtable plugname = &plugin
+	HtPP *plugins_ht;
 } RLib;
 
 #ifdef R_API

@@ -27,14 +27,13 @@ see <http://www.gnu.org/licenses/>.
 
 #define ARRAY_SIZE(a) (sizeof (a) / sizeof (*a))
 
-// TODO : an conf to choose between abi or numeric
-static R_TH_LOCAL const char * const * riscv_gpr_names = riscv_gpr_names_abi;
-static R_TH_LOCAL const char * const * riscv_fpr_names = riscv_fpr_names_abi;
-static R_TH_LOCAL bool init = false;
+// TODO : an conf to choose between abi or numeric (move to PluginData struct)
+const char * const * const riscv_gpr_names = riscv_gpr_names_abi;
+const char * const * const riscv_fpr_names = riscv_fpr_names_abi;
 
 static void arg_p(char *buf, unsigned long val, const char* const* array, size_t size) {
 	const char *s = (val >= size || array[val]) ? array[val] : "unknown";
-	sprintf (buf+strlen (buf), "%s", s);
+	sprintf (buf + strlen (buf), "%s", s);
 }
 
 /* Print insn arguments for 32/64-bit code.  */
@@ -44,7 +43,7 @@ static void get_insn_args(char *buf, const char *d, insn_t l, uint64_t pc) {
 	uint64_t target;
 
 	if (*d != '\0') {
-		sprintf (buf+strlen (buf), " ");
+		sprintf (buf + strlen (buf), " ");
 	}
 
 	for (; *d != '\0'; d++) {
@@ -260,21 +259,4 @@ static void get_insn_args(char *buf, const char *d, insn_t l, uint64_t pc) {
 			return;
 		}
 	}
-}
-
-static struct riscv_opcode *get_opcode(insn_t word) {
-	struct riscv_opcode *op;
-	static const struct riscv_opcode *riscv_hash[OP_MASK_OP + 1] = {0};
-
-#define OP_HASH_IDX(i) ((i) & (riscv_insn_length (i) == 2 ? 3 : OP_MASK_OP))
-
-	if (!init) {
-		for (op = riscv_opcodes; op < &riscv_opcodes[NUMOPCODES]; op++) {
-			if (!riscv_hash[OP_HASH_IDX (op->match)]) {
-				riscv_hash[OP_HASH_IDX (op->match)] = op;
-			}
-		}
-		init = true;
-	}
-	return (struct riscv_opcode *)riscv_hash[OP_HASH_IDX (word)];
 }

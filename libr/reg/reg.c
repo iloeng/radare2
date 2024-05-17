@@ -1,38 +1,23 @@
-/* radare - LGPL - Copyright 2009-2023 - pancake */
+/* radare - LGPL - Copyright 2009-2024 - pancake */
 
 #include <r_reg.h>
 
 R_LIB_VERSION (r_reg);
 
 static const char * const types[R_REG_TYPE_LAST + 1] = {
-	// PAST "gpr", "drx", "fpu", "mmx", "xmm", "ymm", "flg", "seg", NULL
-	// R2_590 Add "pri", // for privileged registers
-	"gpr", "drx", "fpu", "vec64", "vec128", "vec256", "vec512", "flg", "seg", NULL
-	// FUTURE "gpr", "drx", "fpu", "vec", "flg", "seg", NULL
+	"gpr", "drx", "fpu", "vec64", "vec128", "vec256", "vec512", "flg", "seg", "pri", NULL
+	// FUTURE?  vec* -> vec
 };
 
 R_API bool r_reg_hasbits_check(RReg *reg, int size) {
 	return reg->hasbits & size;
-#if 0
-#define HB(x) if (size&x && reg->hasbits &x) return true
-	HB(1);
-	HB(2);
-	HB(4);
-	HB(8);
-	HB(16);
-	HB(32);
-	HB(64);
-	HB(128);
-	HB(256);
-#undef HB
-	return false;
-#endif
 }
 
 R_API void r_reg_hasbits_clear(RReg *reg) {
 	reg->hasbits = 0;
 }
 
+/// XXX use R_SYS_PACK_BITS instead
 R_API bool r_reg_hasbits_use(RReg *reg, int size) {
 	bool done = false;
 #define HB(x) if (size&(x)) { reg->hasbits |= (x); done = true; }
@@ -53,23 +38,20 @@ R_API bool r_reg_hasbits_use(RReg *reg, int size) {
 // If there is no equivalent 64 bit register return NULL.
 // SLOW
 R_API const char *r_reg_32_to_64(RReg *reg, const char *rreg32) {
-	int i, j = -1;
+	int j = -1;
 	RListIter *iter;
 	RRegItem *item;
-	for (i = 0; i < R_REG_TYPE_LAST; i++) {
-		r_list_foreach (reg->regset[i].regs, iter, item) {
-			if (item->size == 32 && !r_str_casecmp (rreg32, item->name)) {
-				j = item->offset;
-				break;
-			}
+	const int i = R_REG_TYPE_GPR;
+	r_list_foreach (reg->regset[i].regs, iter, item) {
+		if (item->size == 32 && !r_str_casecmp (rreg32, item->name)) {
+			j = item->offset;
+			break;
 		}
 	}
 	if (j != -1) {
-		for (i = 0; i < R_REG_TYPE_LAST; i++) {
-			r_list_foreach (reg->regset[i].regs, iter, item) {
-				if (item->offset == j && item->size == 64) {
-					return item->name;
-				}
+		r_list_foreach (reg->regset[i].regs, iter, item) {
+			if (item->offset == j && item->size == 64) {
+				return item->name;
 			}
 		}
 	}
@@ -80,23 +62,20 @@ R_API const char *r_reg_32_to_64(RReg *reg, const char *rreg32) {
 // If there is no equivalent 32 bit register return NULL.
 // SLOW
 R_API const char *r_reg_64_to_32(RReg *reg, const char *rreg64) {
-	int i, j = -1;
+	int j = -1;
 	RListIter *iter;
 	RRegItem *item;
-	for (i = 0; i < R_REG_TYPE_LAST; i++) {
-		r_list_foreach (reg->regset[i].regs, iter, item) {
-			if (item->size == 64 && !r_str_casecmp (rreg64, item->name)) {
-				j = item->offset;
-				break;
-			}
+	const int i = R_REG_TYPE_GPR;
+	r_list_foreach (reg->regset[i].regs, iter, item) {
+		if (item->size == 64 && !r_str_casecmp (rreg64, item->name)) {
+			j = item->offset;
+			break;
 		}
 	}
 	if (j != -1) {
-		for (i = 0; i < R_REG_TYPE_LAST; i++) {
-			r_list_foreach (reg->regset[i].regs, iter, item) {
-				if (item->offset == j && item->size == 32) {
-					return item->name;
-				}
+		r_list_foreach (reg->regset[i].regs, iter, item) {
+			if (item->offset == j && item->size == 32) {
+				return item->name;
 			}
 		}
 	}
@@ -119,15 +98,19 @@ R_API int r_reg_default_bits(RReg *reg) {
 R_API int r_reg_type_by_name(const char *str) {
 	r_return_val_if_fail (str, -1);
 	int i;
+	if (!strcmp (str, "all")) {
+		return R_REG_TYPE_ALL;
+	}
 	for (i = 0; i < R_REG_TYPE_LAST && types[i]; i++) {
 		if (!strcmp (types[i], str)) {
 			return i;
 		}
 	}
-	if (!strcmp (str, "all")) {
-		return R_REG_TYPE_ALL;
-	}
 	return -1;
+}
+
+static void r_reg_item_unref(RRegItem *item) {
+	r_unref (item);
 }
 
 R_API void r_reg_item_free(RRegItem *item) {
@@ -141,21 +124,27 @@ R_API void r_reg_item_free(RRegItem *item) {
 
 R_API int r_reg_get_name_idx(const char *type) {
 	r_return_val_if_fail (type, -1);
-	if (type[0] && type[1] && !type[2])
-	switch (*type | (type[1] << 8)) {
-	/* flags */
+	char type0 = type[0];
+	if (!type0 || !type[1] || !isupper (type0)) {
+		return -1;
+	}
+	if (!type[2])
+	switch (type0 | (type[1] << 8)) {
+	// flags
 	case 'Z' + ('F' << 8): return R_REG_NAME_ZF;
 	case 'S' + ('F' << 8): return R_REG_NAME_SF;
 	case 'C' + ('F' << 8): return R_REG_NAME_CF;
 	case 'O' + ('F' << 8): return R_REG_NAME_OF;
-	/* gpr */
+	// gpr
 	case 'P' + ('C' << 8): return R_REG_NAME_PC;
 	case 'S' + ('R' << 8): return R_REG_NAME_SR;
 	case 'L' + ('R' << 8): return R_REG_NAME_LR;
 	case 'S' + ('P' << 8): return R_REG_NAME_SP;
+	case 'G' + ('P' << 8): return R_REG_NAME_GP;
+	case 'R' + ('A' << 8): return R_REG_NAME_RA;
 	case 'B' + ('P' << 8): return R_REG_NAME_BP;
 	case 'S' + ('N' << 8): return R_REG_NAME_SN;
-	/* args */
+	// args
 	case 'A' + ('0' << 8): return R_REG_NAME_A0;
 	case 'A' + ('1' << 8): return R_REG_NAME_A1;
 	case 'A' + ('2' << 8): return R_REG_NAME_A2;
@@ -166,7 +155,7 @@ R_API int r_reg_get_name_idx(const char *type) {
 	case 'A' + ('7' << 8): return R_REG_NAME_A7;
 	case 'A' + ('8' << 8): return R_REG_NAME_A8;
 	case 'A' + ('9' << 8): return R_REG_NAME_A9;
-	/* return values */
+	// return values
 	case 'R' + ('0' << 8): return R_REG_NAME_R0;
 	case 'R' + ('1' << 8): return R_REG_NAME_R1;
 	case 'R' + ('2' << 8): return R_REG_NAME_R2;
@@ -175,6 +164,8 @@ R_API int r_reg_get_name_idx(const char *type) {
 	case 'F' + ('1' << 8): return R_REG_NAME_F1;
 	case 'F' + ('2' << 8): return R_REG_NAME_F2;
 	case 'F' + ('3' << 8): return R_REG_NAME_F3;
+	// thread register
+	case 'T' + ('R' << 8): return R_REG_NAME_TR;
 	}
 	return -1;
 }
@@ -190,18 +181,19 @@ R_API bool r_reg_set_name(RReg *reg, int role, const char *name) {
 }
 
 R_API const char *r_reg_get_name(RReg *reg, int role) {
-	if (reg && role >= 0 && role < R_REG_NAME_LAST) {
+	r_return_val_if_fail (reg, NULL);
+	if (role >= 0 && role < R_REG_NAME_LAST) {
 		return reg->name[role];
 	}
 	return NULL;
 }
 
 static const char * const roles[R_REG_NAME_LAST + 1] = {
-	"PC", "SP", "SR", "BP", "LR", "RS",
+	"PC", "SP", "GP", "RA", "SR", "BP", "LR", "RS",
 	"A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9",
 	"R0", "R1", "R2", "R3", "F0", "F1", "F2", "F3",
 	"ZF", "SF", "CF", "OF",
-	"SN",
+	"TR", "SN",
 	NULL
 };
 
@@ -215,11 +207,9 @@ R_API const char *r_reg_get_role(int role) {
 R_API void r_reg_free_internal(RReg *reg, bool init) {
 	r_return_if_fail (reg);
 	ut32 i;
-
-	r_list_free (reg->roregs);
-	reg->roregs = NULL;
 	R_FREE (reg->reg_profile_str);
 	R_FREE (reg->reg_profile_cmt);
+	R_FREE (reg->roregs);
 
 	for (i = 0; i < R_REG_NAME_LAST; i++) {
 		if (reg->name[i]) {
@@ -234,7 +224,7 @@ R_API void r_reg_free_internal(RReg *reg, bool init) {
 		}
 		if (init) {
 			r_list_free (reg->regset[i].regs);
-			reg->regset[i].regs = r_list_newf ((RListFree)r_reg_item_free);
+			reg->regset[i].regs = r_list_newf ((RListFree)r_reg_item_unref);
 		} else {
 			r_list_free (reg->regset[i].regs);
 			reg->regset[i].regs = NULL;
@@ -261,6 +251,7 @@ static int regcmp(RRegItem *a, RRegItem *b) {
 }
 
 R_API void r_reg_reindex(RReg *reg) {
+	r_return_if_fail (reg);
 	int i, index;
 	RListIter *iter;
 	RRegItem *r;
@@ -280,6 +271,7 @@ R_API void r_reg_reindex(RReg *reg) {
 }
 
 R_API RRegItem *r_reg_index_get(RReg *reg, int idx) {
+	r_return_val_if_fail (reg, NULL);
 	RRegItem *r;
 	RListIter *iter;
 	if (idx < 0) {
@@ -306,6 +298,8 @@ R_API void r_reg_free(RReg *reg) {
 R_API RReg *r_reg_init(RReg *reg) {
 	r_return_val_if_fail (reg, NULL);
 	r_ref_init (reg, &r_reg_free);
+	reg->config = R_NEW0 (RArchConfig);
+	reg->config->endian = R_SYS_ENDIAN;
 	size_t i;
 	for (i = 0; i < R_REG_TYPE_LAST; i++) {
 		memset (&reg->regset[i], 0, sizeof (RRegSet));
@@ -315,7 +309,7 @@ R_API RReg *r_reg_init(RReg *reg) {
 			return NULL;
 		}
 		reg->regset[i].pool = r_list_newf ((RListFree)r_reg_arena_free);
-		reg->regset[i].regs = r_list_newf ((RListFree)r_reg_item_free);
+		reg->regset[i].regs = r_list_newf ((RListFree)r_reg_item_unref);
 		r_list_push (reg->regset[i].pool, arena);
 		reg->regset[i].arena = arena;
 	}
@@ -362,7 +356,7 @@ R_API void r_reg_set_copy(RRegSet *d, RRegSet *s) {
 	RRegArena *a;
 	RListIter *iter;
 	d->pool = r_list_newf ((RListFree)r_reg_arena_free);
-	d->regs = r_list_newf ((RListFree)r_reg_item_free);
+	d->regs = r_list_newf ((RListFree)r_reg_item_unref);
 	r_list_foreach (s->pool, iter, a) {
 		RRegArena *na = r_reg_arena_clone (a);
 		r_list_append (d->pool, na);
@@ -378,27 +372,10 @@ R_API void r_reg_set_copy(RRegSet *d, RRegSet *s) {
 	d->ht_regs = pp;
 }
 
-
 static inline char *dups(const char *x) {
 	return x? strdup (x): NULL;
 }
 
-#if 0
-R_API RReg *r_reg_clone(RReg *reg) {
-	int i;
-	RReg *r = R_NEW0 (RReg);
-	r->profile = dups (reg->profile);
-	r->reg_profile_cmt = dups (reg->reg_profile_cmt);
-	r->reg_profile_str = dups (reg->reg_profile_str);
-	for (i = 0; i < R_REG_NAME_LAST; i++) {
-		r->name[i] = dups (reg->name[i]);
-	}
-	for (i = 0; i < R_REG_TYPE_LAST; i++) {
-		r->regset[i] = r_reg_set_clone (reg->regset[i]);
-	}
-	return r;
-}
-#endif
 R_API RReg *r_reg_clone(RReg *r) {
 	r_return_val_if_fail (r, NULL);
 	RListIter *iter;
@@ -416,7 +393,6 @@ R_API RReg *r_reg_clone(RReg *r) {
 	rr->reg_profile_str = dups (r->reg_profile_str);
 	for (i = 0; i < R_REG_NAME_LAST; i++) {
 		rr->name[i] = dups (r->name[i]);
-		// r_reg_set_copy (&rr->regset[i], &r->regset[i]);
 	}
 	for (i = 0; i < R_REG_TYPE_LAST; i++) {
 		rr->name[i] = dups (r->name[i]);
@@ -432,29 +408,38 @@ R_API RReg *r_reg_clone(RReg *r) {
 		RRegItem *ri = r_reg_item_clone (reg);
 		r_list_append (rr->allregs, ri);
 	}
-	r->roregs = r_list_newf (NULL);
-	r_list_foreach (r->roregs, iter, reg) {
-		RRegItem *ri = r_reg_item_clone (reg);
-		r_list_append (rr->roregs, ri);
-	}
+	// nothing to clone
 	r_reg_arena_push (rr);
 	r_reg_hasbits_clear (rr);
 	return rr;
 }
 
-R_API bool r_reg_is_readonly(RReg *reg, RRegItem *item) {
-	const char *name;
+R_API bool r_reg_ro_reset(RReg *reg, const char *arg) {
+	free (reg->roregs);
+	reg->roregs = arg? strdup (arg): NULL;
+	RRegItem *ri;
+	const char *regname;
 	RListIter *iter;
-	if (!reg->roregs) {
-		return false;
-	}
-	// XXX O(n)
-	r_list_foreach (reg->roregs, iter, name) {
-		if (!strcmp (item->name, name)) {
-			return true;
+	int i;
+	for (i = 0; i < R_REG_TYPE_LAST; i++) {
+		r_list_foreach (reg->regset[i].regs, iter, ri) {
+			ri->ro = false;
 		}
 	}
-	return false;
+	bool res = true;
+	if (reg->roregs) {
+		RList *roregs = r_str_split_duplist (arg, ",", true);
+		r_list_foreach (roregs, iter, regname) {
+			RRegItem *ri = r_reg_get (reg, regname, -1);
+			if (ri) {
+				ri->ro = true;
+			} else {
+				res = false;
+			}
+		}
+		r_list_free (roregs);
+	}
+	return res;
 }
 
 R_API bool r_reg_setv(RReg *reg, const char *name, ut64 val) {
@@ -482,10 +467,6 @@ R_API ut64 r_reg_getv(RReg *reg, const char *name) {
 R_API RRegItem *r_reg_get(RReg *reg, const char *name, int type) {
 	int i, e;
 	r_return_val_if_fail (reg && name, NULL);
-	//TODO: define flag register as R_REG_TYPE_FLG
-	if (type == R_REG_TYPE_FLG) {
-		type = R_REG_TYPE_GPR;
-	}
 	if (type == -1) {
 		i = 0;
 		e = R_REG_TYPE_LAST;
@@ -497,8 +478,9 @@ R_API RRegItem *r_reg_get(RReg *reg, const char *name, int type) {
 			}
 		}
 	} else {
-		i = type;
-		e = type + 1;
+		//TODO: define flag register as R_REG_TYPE_FLG
+		i = (type == R_REG_TYPE_FLG)? R_REG_TYPE_GPR: type;
+		e = i + 1;
 	}
 	for (; i < e; i++) {
 		HtPP *pp = reg->regset[i].ht_regs;
@@ -515,26 +497,20 @@ R_API RRegItem *r_reg_get(RReg *reg, const char *name, int type) {
 }
 
 R_API RList *r_reg_get_list(RReg *reg, int type) {
+	r_return_val_if_fail (reg, NULL);
+	// TODO: uncomment this line r_return_val_if_fail (type >= 0 && type <= R_REG_TYPE_LAST, NULL);
 	if (type == R_REG_TYPE_ALL) {
 		return reg->allregs;
 	}
-
-	RList *regs;
-	int i, mask;
-	if (type < 0 || type > (R_REG_TYPE_LAST - 1)) {
-		return NULL;
-	}
-
-	regs = reg->regset[type].regs;
+	RList *regs = reg->regset[type].regs;
 	if (regs && r_list_length (regs) == 0) {
-		mask = ((int)1 << type);
+		int i, mask = ((ut32)1 << type);
 		for (i = 0; i < R_REG_TYPE_LAST; i++) {
 			if (reg->regset[i].maskregstype & mask) {
 				regs = reg->regset[i].regs;
 			}
 		}
 	}
-
 	return regs;
 }
 

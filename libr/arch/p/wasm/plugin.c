@@ -27,20 +27,14 @@ typedef struct wasm_cf_info {
 static inline ut64 get_func_offset(RArch *a, ut32 id, bool start) {
 	if (a && a->binb.get_offset && a->binb.bin) {
 		int type = start? 'F': 'e'; // find start or end
-		int ret = a->binb.get_offset (a->binb.bin, type, id);
-		if (ret >= 0) {
-			return ret;
-		}
+		return a->binb.get_offset (a->binb.bin, type, id);
 	}
 	return UT64_MAX;
 }
 
 static inline ut64 func_off_from_idx(RArch *a, ut32 id) {
 	if (a && a->binb.get_offset && a->binb.bin) {
-		int ret = a->binb.get_offset (a->binb.bin, 'f', id);
-		if (ret >= 0) {
-			return ret;
-		}
+		return a->binb.get_offset (a->binb.bin, 'f', id);
 	}
 	return UT64_MAX;
 }
@@ -362,7 +356,7 @@ static bool wasm_encode(RArchSession *s, RAnalOp *op, RArchEncodeMask mask) {
 static bool wasm_decode(RArchSession *s, RAnalOp *op, RAnalOpMask mask) {
 	r_return_val_if_fail (s && op, false);
 	WasmOp wop = {{0}};
-	bool txt = mask & R_ARCH_OP_MASK_DISASM;
+	const bool txt = mask & R_ARCH_OP_MASK_DISASM;
 	int ret = wasm_dis (&wop, op->bytes, op->size, txt);
 
 	op->mnemonic = wop.txt;
@@ -374,7 +368,6 @@ static bool wasm_decode(RArchSession *s, RAnalOp *op, RAnalOpMask mask) {
 	}
 
 	op->nopcode = 1;
-	op->size = ret;
 	op->sign = true; // XXX: Probably not always signed?
 	op->type = R_ANAL_OP_TYPE_UNK;
 	switch (wop.type) {
@@ -492,7 +485,7 @@ static bool wasm_decode(RArchSession *s, RAnalOp *op, RAnalOpMask mask) {
 		case WASM_OP_F32CONST:
 		case WASM_OP_F64CONST:
 			op->type = R_ANAL_OP_TYPE_MOV;
-			{
+			if (op->size > 1) {
 				ut8 arg = op->bytes[1];
 				r_strbuf_setf (&op->esil, "4,sp,-=,%d,sp,=[4]", arg);
 			}
@@ -607,8 +600,8 @@ static bool wasm_decode(RArchSession *s, RAnalOp *op, RAnalOpMask mask) {
 	default:
 		break;
 	}
-
-	return op->size;
+	op->size = ret;
+	return ret > 0;
 }
 
 #if 0
@@ -648,10 +641,12 @@ static bool cache_clean(RArchSession *s) {
 	return true;
 }
 
-RArchPlugin r_arch_plugin_wasm = {
-	.name = "wasm",
-	.desc = "WebAssembly analysis plugin",
-	.license = "LGPL3",
+const RArchPlugin r_arch_plugin_wasm = {
+	.meta = {
+		.name = "wasm",
+		.desc = "WebAssembly analysis plugin",
+		.license = "LGPL3",
+	},
 	.arch = "wasm",
 	.bits = R_SYS_BITS_PACK1 (64),
 	.regs = wasm_regs,

@@ -52,10 +52,12 @@ static bool encode(RArchSession *a, RAnalOp *op, RArchEncodeMask mask) {
 	return true;
 }
 
-RArchPlugin r_arch_plugin_x86_nasm = {
-	.name = "x86.nasm",
-	.desc = "X86 nasm assembler",
-	.license = "LGPL3",
+const RArchPlugin r_arch_plugin_x86_nasm = {
+	.meta = {
+		.name = "x86.nasm",
+		.desc = "X86 nasm assembler",
+		.license = "LGPL3",
+	},
 	.arch = "x86",
 	// NOTE: 64bits is not supported on OSX's nasm :(
 	.bits = R_SYS_BITS_PACK3 (16, 32, 64),

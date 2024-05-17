@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2011-2022 pancake */
+/* radare - LGPL - Copyright 2011-2023 pancake */
 
 #include <r_lang.h>
 
@@ -102,9 +102,11 @@ static bool vala_run_file(RLangSession *s, const char *file) {
 	return lang_vala_file (s, file, false);
 }
 
-static bool lang_vala_init(void *user) {
-	// TODO: check if "valac" is found in path
-	return true;
+static bool lang_vala_init(RLangSession *s) {
+	char *valac = r_file_path ("valac");
+	bool found = (valac && *valac != 'v');
+	free (valac);
+	return found;
 }
 
 static bool lang_vala_run(RLangSession *s, const char *code, int len) {
@@ -127,12 +129,14 @@ static bool lang_vala_run(RLangSession *s, const char *code, int len) {
 }
 
 static RLangPlugin r_lang_plugin_vala = {
-	.name = "vala",
+	.meta = {
+		.name = "vala",
+		.author = "pancake",
+		.license = "LGPL",
+		.desc = "Vala language extension",
+	},
 	.ext = "vala",
-	.author = "pancake",
-	.license = "LGPL",
-	.desc = "Vala language extension",
 	.run = lang_vala_run,
-	.init = (void*)lang_vala_init,
+	.init = lang_vala_init,
 	.run_file = (void*)vala_run_file,
 };

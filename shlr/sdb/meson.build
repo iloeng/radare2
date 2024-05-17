@@ -45,7 +45,6 @@ libsdb_sources = [
   'src/array.c',
   'src/set.c',
   'src/base64.c',
-  'src/buffer.c',
   'src/cdb.c',
   'src/cdb_make.c',
   'src/dict.c',
@@ -58,6 +57,7 @@ libsdb_sources = [
   'src/ht_up.c',
   'src/ht_pp.c',
   'src/ht_pu.c',
+  'src/ht_su.c',
   'src/journal.c',
   'src/json.c',
   'src/lock.c',
@@ -112,13 +112,17 @@ if not meson.is_subproject()
     'include/sdb/ht_pp.h',
     'include/sdb/ht_up.h',
     'include/sdb/ht_uu.h',
-    'include/sdb/ht_up.h',
+    'include/sdb/ht_pu.h',
+    'include/sdb/ht_su.h',
     'include/sdb/ls.h',
     'include/sdb/sdb.h',
     'include/sdb/ht.h',
     'include/sdb/set.h',
     'include/sdb/types.h',
-    'include/sdb/rangstr.h'
+    'include/sdb/asserts.h',
+    'include/sdb/cwisstable.h',
+    'include/sdb/gcc_stdatomic.h',
+    'include/sdb/msvc_stdatomic.h',
   ]
   install_headers(include_files, subdir: 'sdb')
 endif

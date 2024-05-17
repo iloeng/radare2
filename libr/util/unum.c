@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2007-2022 - pancake */
+/* radare - LGPL - Copyright 2007-2023 - pancake */
 
 #define R_LOG_ORIGIN "util.num"
 
@@ -33,9 +33,9 @@ R_API size_t r_num_bit_clz32(ut32 val) { // CLZ
 }
 
 R_API size_t r_num_bit_clz64(ut64 val) { // CLZ
-	val = val - ((val >> 1) & 0x5555555555555555);
-	val = (val & 0x3333333333333333) + ((val >> 2) & 0x3333333333333333);
-	return (((val + (val >> 4)) & 0x0F0F0F0F0F0F0F0F) * 0x0101010101010101) >> 24;
+	val = val - ((val >> 1) & 0x5555555555555555ULL);
+	val = (val & 0x3333333333333333ULL) + ((val >> 2) & 0x3333333333333333ULL);
+	return (((val + (val >> 4)) & 0x0F0F0F0F0F0F0F0FULL) * 0x0101010101010101ULL) >> 24;
 }
 
 R_API size_t r_num_bit_count(ut32 val) { // CLZ
@@ -304,6 +304,9 @@ R_API ut64 r_num_get(RNum *num, const char *str) {
 		}
 	} else if (!strncmp (str, "0xf..", 5) || !strncmp (str, "0xF..", 5)) {
 		ret = r_num_tailff (num, str + 5);
+	} else if (str[0] == '0' && tolower ((ut8)str[1]) == '_') {
+		// base36 here
+		ret = b36_tonum (str + 2);
 	} else if (str[0] == '0' && tolower ((ut8)str[1]) == 'x') {
 		const char *lodash = strchr (str + 2, '_');
 		if (lodash) {
@@ -475,7 +478,7 @@ R_API int r_num_is_float(RNum *num, const char *str) {
 	return (IS_DIGIT (*str) && (strchr (str, '.') || str[strlen (str) - 1] == 'f'));
 }
 
-R_API double r_num_get_float(RNum *num, const char *str) {
+R_API double r_num_get_double(RNum *num, const char *str) {
 	double d = 0.0f;
 	(void) sscanf (str, "%lf", &d);
 	return d;
@@ -724,10 +727,8 @@ R_API ut64 r_num_tail(RNum *num, ut64 addr, const char *hex) {
 		hex++;
 	}
 	int i = strlen (hex) * 4;
-	char *p = malloc (strlen (hex) + 10);
+	char *p = r_str_newf ("0x%s", hex);
 	if (p) {
-		strcpy (p, "0x");
-		strcpy (p + 2, hex);
 		if (isxdigit ((ut8)hex[0])) {
 			n = r_num_math (num, p);
 		} else {
@@ -748,10 +749,8 @@ static ut64 r_num_tailff(RNum *num, const char *hex) {
 		hex++;
 	}
 	int i = strlen (hex) * 4;
-	char *p = malloc (strlen (hex) + 10);
+	char *p = r_str_newf ("0x%s", hex);
 	if (p) {
-		strcpy (p, "0x");
-		strcpy (p + 2, hex);
 		if (isxdigit ((ut8)hex[0])) {
 			n = r_num_get (num, p);
 		} else {

@@ -13,7 +13,7 @@
 
 // TODO :Rename CSINC to something meaningful
 #define CSINC EVM
-#include "../capstone.inc"
+#include "../capstone.inc.c"
 
 typedef struct {
 	Sdb *pushs_db;
@@ -372,11 +372,11 @@ static bool fini(RArchSession *s) {
 
 static int archinfo(RArchSession *a, ut32 q) {
 	switch (q) {
-	case R_ARCH_INFO_ALIGN:
+	case R_ARCH_INFO_CODE_ALIGN:
 		return 0;
-	case R_ARCH_INFO_MAX_OP_SIZE:
+	case R_ARCH_INFO_MAXOP_SIZE:
 		return 33;
-	case R_ARCH_INFO_MIN_OP_SIZE:
+	case R_ARCH_INFO_MINOP_SIZE:
 		return 1;
 	}
 	return 0;
@@ -387,10 +387,12 @@ static char *mnemonics(RArchSession *s, int id, bool json) {
 	return r_arch_cs_mnemonics (s, epd->cs_handle, id, json);
 }
 
-RArchPlugin r_arch_plugin_evm = {
-	.name = "evm",
-	.desc = "EthereumVM plugin",
-	.license = "BSD",
+const RArchPlugin r_arch_plugin_evm = {
+	.meta = {
+		.name = "evm",
+		.desc = "EthereumVM plugin",
+		.license = "BSD",
+	},
 	.arch = "evm",
 	.regs = regs,
 	.info = archinfo,
@@ -411,7 +413,7 @@ R_API RLibStruct radare_plugin = {
 #endif
 
 #else
-RArchPlugin r_arch_plugin_evm = { 0 };
+const RArchPlugin r_arch_plugin_evm = { 0 };
 #ifndef R2_PLUGIN_INCORE
 R_API RLibStruct radare_plugin = {
 	.type = R_LIB_TYPE_ARCH,

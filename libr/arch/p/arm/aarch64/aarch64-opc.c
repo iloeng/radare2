@@ -26,9 +26,8 @@
 #include <stdarg.h>
 #include <inttypes.h>
 
-#include "opintl.h"
-#include "libiberty.h"
-
+#include "../../../include/opintl.h"
+#include "../../../include/libiberty.h"
 #include "aarch64-opc.h"
 
 #ifdef DEBUG_AARCH64
@@ -2809,6 +2808,7 @@ get_offset_int_reg_name (const aarch64_opnd_info *opnd)
 
     default:
       abort ();
+      return NULL; // redundant, but makes all compilers happy
     }
 }
 

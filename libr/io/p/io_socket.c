@@ -150,7 +150,7 @@ static RIODesc *__open(RIO *io, const char *pathname, int rw, int mode) {
 	if (io->va) {
 		R_LOG_WARN ("This is a raw stream and growing io plugin, You may disable io.va to not depend on maps");
 	}
-	return r_io_desc_new (io, &r_io_plugin_socket, pathname, R_PERM_RW | rw, mode, mal);
+	return r_io_desc_new (io, &r_io_plugin_socket, pathname, R_PERM_RW | (rw & R_PERM_X), mode, mal);
 }
 
 static char *__system(RIO *io, RIODesc *desc, const char *cmd) {
@@ -162,10 +162,12 @@ static char *__system(RIO *io, RIODesc *desc, const char *cmd) {
 }
 
 RIOPlugin r_io_plugin_socket = {
-	.name = "socket",
-	.desc = "Connect or listen via TCP on a growing io",
+	.meta = {
+		.name = "socket",
+		.desc = "Connect or listen via TCP on a growing io",
+		.license = "MIT",
+	},
 	.uris = SOCKETURI,
-	.license = "MIT",
 	.open = __open,
 	.close = __close,
 	.read = __read,

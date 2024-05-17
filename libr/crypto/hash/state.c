@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2009-2022 pancake */
+/* radare - LGPL - Copyright 2009-2024 pancake */
 
 #include <r_hash.h>
 #include <r_util.h>
@@ -52,6 +52,7 @@ R_API RHash *r_hash_new(bool rst, ut64 flags) {
 }
 
 R_API void r_hash_do_begin(RHash *ctx, ut64 flags) {
+	R_RETURN_IF_FAIL (ctx);
 	CHKFLAG (R_HASH_MD5) r_hash_do_md5 (ctx, NULL, -1);
 	CHKFLAG (R_HASH_SHA1) r_sha1_init (&ctx->sha1);
 	CHKFLAG (R_HASH_SHA256) r_sha256_init (&ctx->sha256);
@@ -61,6 +62,7 @@ R_API void r_hash_do_begin(RHash *ctx, ut64 flags) {
 }
 
 R_API void r_hash_do_end(RHash *ctx, ut64 flags) {
+	R_RETURN_IF_FAIL (ctx);
 	CHKFLAG (R_HASH_MD5) r_hash_do_md5 (ctx, NULL, -2);
 	CHKFLAG (R_HASH_SHA1) r_sha1_final (ctx->digest, &ctx->sha1);
 	CHKFLAG (R_HASH_SHA256) r_sha256_final (ctx->digest, &ctx->sha256);
@@ -74,6 +76,7 @@ R_API void r_hash_free(RHash *ctx) {
 }
 
 R_API ut8 *r_hash_do_sip(RHash *ctx, const ut8 *input, int len) {
+	R_RETURN_VAL_IF_FAIL (ctx && input, NULL);
 	if (len < 0) {
 		return NULL;
 	}
@@ -85,6 +88,7 @@ R_API ut8 *r_hash_do_sip(RHash *ctx, const ut8 *input, int len) {
 }
 
 R_API ut8 *r_hash_do_ssdeep(RHash *ctx, const ut8 *input, int len) {
+	R_RETURN_VAL_IF_FAIL (ctx && input, NULL);
 	if (len < 0) {
 		return NULL;
 	}
@@ -97,6 +101,7 @@ R_API ut8 *r_hash_do_ssdeep(RHash *ctx, const ut8 *input, int len) {
 }
 
 R_API ut8 *r_hash_do_sha1(RHash *ctx, const ut8 *input, int len) {
+	R_RETURN_VAL_IF_FAIL (ctx && input, NULL);
 	if (len < 0) {
 		return NULL;
 	}
@@ -111,6 +116,7 @@ R_API ut8 *r_hash_do_sha1(RHash *ctx, const ut8 *input, int len) {
 }
 
 R_API ut8 *r_hash_do_sha256(RHash *ctx, const ut8 *input, int len) {
+	R_RETURN_VAL_IF_FAIL (ctx && input, NULL);
 	if (len < 0) {
 		return NULL;
 	}
@@ -139,6 +145,7 @@ R_API ut8 *r_hash_do_sha384(RHash *ctx, const ut8 *input, int len) {
 }
 
 R_API ut8 *r_hash_do_sha512(RHash *ctx, const ut8 *input, int len) {
+	R_RETURN_VAL_IF_FAIL (ctx && input, NULL);
 	if (len < 0) {
 		return NULL;
 	}
@@ -149,6 +156,33 @@ R_API ut8 *r_hash_do_sha512(RHash *ctx, const ut8 *input, int len) {
 	if (ctx->rst || len == 0) {
 		r_sha512_final (ctx->digest, &ctx->sha512);
 	}
+	return ctx->digest;
+}
+
+// https://www.sco.com/developers/gabi/latest/ch5.dynamic.html#hash
+static unsigned long elf_hash(const unsigned char *name) {
+	unsigned long h = 0, g;
+	while (*name) {
+		h = (h << 4) + *name++;
+		g = h & 0xf0000000;
+		if (g) {
+			h ^= g >> 24;
+		}
+		h &= ~g;
+	}
+	return h;
+}
+
+R_API ut8 *r_hash_do_elf(RHash *ctx, const ut8 *input, int len) {
+	unsigned long hash;
+	if (len < 0) {
+		hash = elf_hash (input);
+	} else {
+		ut8 *s = (ut8*) r_str_ndup ((const char*)input, len);
+		hash = elf_hash (s);
+		free (s);
+	}
+	memcpy (ctx->digest, &hash, sizeof (unsigned long));
 	return ctx->digest;
 }
 

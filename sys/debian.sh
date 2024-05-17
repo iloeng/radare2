@@ -3,6 +3,23 @@
 
 uname -a
 
+ARG=$1
+
+if [ "$ARG" = "arm64" ]; then
+  ARCH=arm64
+  CFGARGS="--with-compiler=aarch64-linux-gnu-gcc"
+  export CC="aarch64-linux-gnu-gcc"
+elif [ "$ARG" = "amd64" ]; then
+  ARCH=amd64
+  export CFLAGS="-Werror"
+elif [ "$ARG" = "i386" ]; then
+  ARCH=i386
+  export CFLAGS="-m32 -Werror"
+  export LDFLAGS=-m32
+else
+  CFGARGS=$*
+fi
+
 if [ -z "${ARCH}" ]; then
   ARCH=`uname -m`
 fi
@@ -13,6 +30,7 @@ fi
 if [ "${ARCH}" = "aarch64" ]; then
   ARCH=arm64
 fi
+export ARCH
 
 echo "[debian] preparing radare2 package..."
 PKGDIR=dist/debian/radare2/root
@@ -32,7 +50,7 @@ fi
 
 export CFLAGS="-Wno-cpp -Wno-unused-result ${CFLAGS} -O2"
 # build
-./configure --prefix=/usr --with-checks-level=0 $*
+./configure --prefix=/usr --with-checks-level=0 ${CFGARGS}
 [ $? != 0 ] && exit 1
 make -j4
 [ $? != 0 ] && exit 1

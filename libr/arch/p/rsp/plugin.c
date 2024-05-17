@@ -779,10 +779,12 @@ static int archinfo(RArchSession *s, ut32 q) {
 	return 4;
 }
 
-RArchPlugin r_arch_plugin_rsp = {
-	.name = "rsp",
-	.desc = "RSP code analysis plugin",
-	.license = "LGPL3",
+const RArchPlugin r_arch_plugin_rsp = {
+	.meta = {
+		.name = "rsp",
+		.desc = "RSP code analysis plugin",
+		.license = "LGPL3",
+	},
 	.arch = "rsp",
 	.bits = R_SYS_BITS_PACK (32),
 	.decode = &rsp_op,

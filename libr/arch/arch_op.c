@@ -1,8 +1,6 @@
-/* radare - LGPL - Copyright 2010-2022 - pancake, nibble, condret */
+/* radare - LGPL - Copyright 2010-2024 - pancake, nibble, condret */
 
 #include <r_arch.h>
-#include <r_util.h>
-#include <r_list.h>
 
 // XXX this is unused
 
@@ -74,6 +72,7 @@ R_API RAnalOp *r_anal_op_clone(RAnalOp *op) {
 }
 
 
+#if 0
 R_API RList *r_anal_op_list_new(void) {
 	RList *list = r_list_new ();
 	if (list) {
@@ -81,6 +80,7 @@ R_API RList *r_anal_op_list_new(void) {
 	}
 	return list;
 }
+#endif
 
 R_API void r_anal_op_init(RAnalOp *op) {
 	if (op) {

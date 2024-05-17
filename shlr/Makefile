@@ -6,14 +6,22 @@ _INCLUDE_MK_GCC_=
 include ../mk/${COMPILER}.mk
 include ../mk/darwin.mk
 
+
+ifeq ($(shell test -f ../ChangeLog -a -d capstone -a ! -d capstone/.git && echo 1),1)
+WITHOUT_PULL=1
+CS_RELEASE=0
+else
+WITHOUT_PULL=0
+
 # Build against last capstone release or next
-ifeq ($(shell test -d ../.git && echo 1),1)
+ifeq ($(shell test -e ../.git && echo 1),1)
 CS_RELEASE=0
 else
 ifeq ($(shell test -d capstone/.git && echo 1),1)
 CS_RELEASE=0
 else
 CS_RELEASE=1
+endif
 endif
 endif
 
@@ -29,7 +37,7 @@ WGET?=curl -o
 endif
 
 ifeq ($(CS_RELEASE),1)
-CS_VER=4.0.2
+CS_VER=5.0
 CS_TAR=https://codeload.github.com/capstone-engine/capstone/tar.gz/$(CS_VER)
 #CS_TAR=http://capstone-engine.org/download/$(CS_VER)/capstone-$(CS_VER).tgz
 CS_PATCHES=0
@@ -40,12 +48,17 @@ CS_URL=$(GIT_PREFIX)$(CS_URL_BASE).git
 CS_ARCHIVE=https://$(CS_URL_BASE)/archive
 CS_UPD=20201203
 # NOTE: when you update CS_TIP or CS_BRA, also update them in shlr/meson.build
+ifeq ($(USE_CSNEXT),1)
+CS_TIP=58528853111377ba2f8ecb781f8d3bdc595900ed
+CS_BRA=next
+else
 ifeq ($(USE_CS4),1)
-CS_TIP=1d230532840a37ac032c6ab80128238fc930c6c1
+CS_TIP=0efa3cc530ea188c0e03c945ab884ee19dd16342
 CS_BRA=v4
 else
-CS_TIP=12e8258f60647a997ffa72702a9e5b37bd622044
-CS_BRA=next
+CS_TIP=11a2ea286336c52c485da8256ea70148b04a990c
+CS_BRA=v5
+endif
 endif
 ifeq ($(CS_COMMIT_ARCHIVE),1)
 CS_ARCHIVE_URL=$(CS_ARCHIVE)/$(CS_TIP).zip
@@ -255,11 +268,13 @@ else
 
 capstone: capstone-sync
 
+patch-capstone capstone-patch:
+
 capstone-sync:
 ifeq ($(WITHOUT_PULL),1)
 	@echo "Nothing to sync because of --without-pull"
 else
-	if [ ! -d capstone ] || [ ! -f libcapstone.a ] || [ $(shell [ -d capstone/.git ] && git --git-dir capstone/.git rev-parse HEAD) != $(CS_TIP) ]; then \
+	if [ ! -d capstone ] || [ ! -f capstone/libcapstone.a ] || [ $(shell [ -d capstone/.git ] && git --git-dir capstone/.git rev-parse HEAD) != $(CS_TIP) ]; then \
 		"$(SHELL)" capstone.sh "${CS_URL}" "${CS_BRA}" "${CS_TIP}" "${CS_REV}" "${CS_ARCHIVE_URL}" ; \
 	fi
 endif
@@ -339,7 +354,6 @@ SHLRS+=capstone/libcapstone.a
 SHLRS+=gdb/lib/libgdbr.a
 SHLRS+=grub/libgrubfs.a
 SHLRS+=java/libr_java.a
-SHLRS+=lz4/liblz4.a
 SHLRS+=qnx/lib/libqnxr.a
 SHLRS+=winkd/libr_winkd.a
 SHLRS+=zip/librz.a

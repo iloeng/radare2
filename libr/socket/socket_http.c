@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2011-2022 - pancake */
+/* radare - LGPL - Copyright 2011-2024 - pancake */
 
 #include <r_socket.h>
 #include <r_util.h>
@@ -342,7 +342,7 @@ R_API char *r_socket_http_post(const char *url, const char *data, int *code, int
 #if TEST
 void main () {
 	int ret;
-	char *p = r_socket_http_post ("http://www.radare.org/y/index.php", "a=b", &ret);
+	char *p = r_socket_http_post ("https://www.radare.org/y/index.php", "a=b", &ret);
 	printf ("%s\n", p);
 }
 #endif

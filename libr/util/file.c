@@ -1,6 +1,6 @@
-/* radare - LGPL - Copyright 2007-2022 - pancake */
+/* radare - LGPL - Copyright 2007-2024 - pancake */
 
-#define R_LOG_ORIGIN "filter"
+#define R_LOG_ORIGIN "util.file"
 
 #include <r_util.h>
 #include <time.h>
@@ -181,6 +181,7 @@ R_API bool r_file_is_directory(const char *str) {
 }
 
 R_API bool r_file_fexists(const char *fmt, ...) {
+	r_return_val_if_fail (fmt, false);
 	int ret;
 	char string[BS];
 	va_list ap;
@@ -192,8 +193,14 @@ R_API bool r_file_fexists(const char *fmt, ...) {
 }
 
 R_API bool r_file_exists(const char *str) {
+	r_return_val_if_fail (str, false);
 	struct stat buf = {0};
 #if 1
+#if 0
+	// maybe faster?
+	int res = access (str, R_OK);
+	return (res == 0);
+#endif
 	if (file_stat (str, &buf) != 0) {
 		return false;
 	}
@@ -231,7 +238,7 @@ R_API char *r_file_abspath_rel(const char *cwd, const char *file) {
 	if (strstr (file, "://")) {
 		return strdup (file);
 	}
-	if (!strncmp (file, "~/", 2) || !strncmp (file, "~\\", 2)) {
+	if (r_str_startswith (file, "~/") || r_str_startswith (file, "~\\")) {
 		ret = r_file_home (file + 2);
 	} else {
 #if R2__UNIX__
@@ -291,25 +298,26 @@ R_API char *r_file_binsh(void) {
 	if (R_STR_ISEMPTY (bin_sh)) {
 		free (bin_sh);
 		bin_sh = r_file_path ("sh");
-		if (!bin_sh || *bin_sh != '/') {
-			free (bin_sh);
+		if (!bin_sh) {
 			bin_sh = strdup (SHELL_PATH);
 		}
 	}
 	return bin_sh;
 }
 
+// Returns bin location in PATH, NULL if not found
 R_API char *r_file_path(const char *bin) {
 	r_return_val_if_fail (bin, NULL);
 	char *file = NULL;
 	char *path = NULL;
 	char *str, *ptr;
 	const char *extension = "";
-	if (!strncmp (bin, "./", 2)) {
+	if (r_str_startswith (bin, "./")) {
 		return r_file_exists (bin)
-			? r_file_abspath (bin): NULL;
+			? r_file_abspath (bin)
+			: NULL;
 	}
-	char *path_env = (char *)r_sys_getenv ("PATH");
+	char *path_env = r_sys_getenv ("PATH");
 #if R2__WINDOWS__
 	if (!r_str_endswith (bin, ".exe")) {
 		extension = ".exe";
@@ -336,7 +344,39 @@ R_API char *r_file_path(const char *bin) {
 	}
 	free (path_env);
 	free (path);
-	return strdup (bin);
+	return NULL;
+}
+
+R_API char *r_stdin_readline(int *sz) {
+	int l = 0;
+	RStrBuf *sb = r_strbuf_new ("");
+	*sz = 0;
+	if (!sb) {
+		return NULL;
+	}
+	char buf[4096];
+	for (;;) {
+		int n = read (0, buf, sizeof (buf));
+		if (n < 1) {
+			r_strbuf_free (sb);
+			return NULL;
+		}
+		r_strbuf_append_n (sb, buf, n);
+		l += n;
+		if (0 && buf[n - 1] == '\n') {
+			l--;
+			buf[n - 1] = 0;
+			break;
+		}
+		if (n < sizeof (buf)) {
+			break;
+		}
+	}
+	*sz = l;
+	// NOTE that r_strbuf_drain uses r_str_ndup which chops strings with null bytes
+	char *res = r_mem_dup (r_strbuf_getbin (sb, NULL), l + 1);
+	r_strbuf_free (sb);
+	return res;
 }
 
 R_API char *r_stdin_slurp(int *sz) {
@@ -535,10 +575,12 @@ R_API ut8 *r_file_slurp_hexpairs(const char *str, int *usz) {
 	return ret;
 }
 
-R_API char *r_file_slurp_range(const char *str, ut64 off, int sz, int *osz) {
-	char *ret;
+R_API char *r_file_slurp_range(const char *file, ut64 off, int sz, int *osz) {
+	if (sz < 1) {
+		return NULL;
+	}
 	size_t read_items;
-	FILE *fd = r_sandbox_fopen (str, "rb");
+	FILE *fd = r_sandbox_fopen (file, "rb");
 	if (!fd) {
 		return NULL;
 	}
@@ -547,7 +589,7 @@ R_API char *r_file_slurp_range(const char *str, ut64 off, int sz, int *osz) {
 		fclose (fd);
 		return NULL;
 	}
-	ret = (char *) malloc (sz + 1);
+	char *ret = (char *) malloc (sz + 1);
 	if (ret) {
 		if (osz) {
 			*osz = (int)(size_t) fread (ret, 1, sz, fd);
@@ -880,6 +922,7 @@ R_API bool r_file_move(const char *src, const char *dst) {
 #endif
 		free (a);
 		free (b);
+		free (input);
 		return rc == 0;
 	}
 	return true;
@@ -1437,10 +1480,10 @@ R_API RList *r_file_lsrf(const char *dir) {
 }
 
 R_API bool r_file_rm_rf(const char *dir) {
-	RList *files = r_file_lsrf (dir);
 	if (r_file_exists (dir)) {
 		return r_file_rm (dir);
 	}
+	RList *files = r_file_lsrf (dir);
 	if (!files) {
 		return false;
 	}
@@ -1450,6 +1493,7 @@ R_API bool r_file_rm_rf(const char *dir) {
 	r_list_foreach_prev (files, iter, f)  {
 		r_file_rm (f);
 	}
+	r_list_free (files);
 	return r_file_rm (dir);
 }
 

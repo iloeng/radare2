@@ -10,6 +10,28 @@ place to start if you are looking to contribute.
 For information about the git process, see
 [CONTRIBUTING.md](CONTRIBUTING.md#How_to_contribute).
 
+## IDE settings
+### generate compile_commands.json
+compile_commands.json records the dependency relationship between `.c/.h` file.
+It is used by language server(ccls, clang, e.g.) to provide accurate code 
+completion, syntax highlighting, and other intelligent code analysis features.
+
+If you haven't built the project yet, you can do the following:
+```
+sudo apt-get install bear
+bear -- ./sys/install.sh
+```
+If you have built the project:
+```
+make clean
+bear -- make install
+```
+`bear` is tool that will hook the usage of gcc and generate `compile_commands.json`.
+
+### language server
+Both of `ccls` and `clangd` supports `compile_commands.json`. You can add 
+corresponding plugin for your IDE.
+
 ## Documentation
 
 Functions should have descriptive names and parameters. It should be clear what
@@ -500,7 +522,7 @@ against to use radare2's libraries without depending on an existing system
 installation. See [doc/static.md](doc/static.md) for more info.
 
 [This presentation](http://radare.org/get/lacon-radare-2009/) gives a good
-overview of the libraries.
+overview of the libraries. //Link not working temporarily.
 
 ## API
 
@@ -590,6 +612,7 @@ discard your current work, use the following commands:
 ```sh
 git clean -xdf
 git reset --hard
+rm -rf shlr/capstone
 ```
 
 ## Regression testing

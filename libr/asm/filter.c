@@ -1,10 +1,6 @@
-/* radare2 - LGPL - Copyright 2009-2019 - nibble, pancake, maijin */
+/* radare2 - LGPL - Copyright 2009-2023 - nibble, pancake, maijin */
 
-#include <stdio.h>
-
-#include <r_types.h>
 #include <r_parse.h>
-#include <config.h>
 
 #define isx86separator(x) ( \
 	(x) == ' '||(x) == '\t'||(x) == '\n'|| (x) == '\r'||(x) == ' '|| \
@@ -154,13 +150,11 @@ static bool filter(RParse *p, ut64 addr, RFlag *f, RAnalHint *hint, char *data, 
 	bool arm = false;
 	const char *pname = (p && p->cur && p->cur->name) ? p->cur->name: NULL;
 	if (pname) {
-		if (strstr (pname, "x86")) {
+		if (r_str_startswith (pname, "x86")) {
 			x86 = true;
-		}
-		if (strstr (pname, "m68k")) {
+		} else if (r_str_startswith (pname, "m68k")) {
 			x86 = true; /// w t f? trick or wat
-		}
-		if (strstr (pname, "arm")) {
+		} else if (r_str_startswith (pname, "arm")) {
 			arm = true;
 		}
 	}
@@ -543,6 +537,13 @@ static bool filter(RParse *p, ut64 addr, RFlag *f, RAnalHint *hint, char *data, 
 					snprintf (num, sizeof (num), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
 				}
 				break;
+			case 36:
+				{
+					char b36str[16];
+					b36_fromnum (b36str, off);
+					r_str_ncpy (num, b36str, sizeof (num));
+				}
+				break;
 			case 80:
 				if (p && p->analb.anal && p->analb.anal->syscall) {
 					RSyscallItem *si = r_syscall_get (p->analb.anal->syscall, off, -1);
@@ -593,7 +594,7 @@ R_API bool r_parse_filter(RParse *p, ut64 addr, RFlag *f, RAnalHint *hint, char 
 // r_asm_subvar()
 // r_asm_replace()
 
-// R2_580 - easier to use, should replace r_asm_filter(), but its not using rflag, analhint, endian, etc
+// R2_590 - easier to use, should replace r_asm_filter(), but its not using rflag, analhint, endian, etc
 // this function is unused, but there's data we are missing, like the analhint.. that we must ensure that is called before calling this. so we need more tests for this.
 R_API char *r_parse_filter_dup(RParse *p, ut64 addr, const char *opstr) {
 	const size_t out_len = 256;

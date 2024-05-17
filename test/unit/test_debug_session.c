@@ -3,7 +3,7 @@
 #include <r_reg.h>
 #include "minunit.h"
 
-static Sdb *ref_db() {
+static Sdb *ref_db(void) {
 	Sdb *db = sdb_new0 ();
 
 	sdb_num_set (db, "maxcnum", 1, 0);
@@ -26,7 +26,8 @@ static Sdb *ref_db() {
 			"{\"arena\":5,\"bytes\":\"BQUFBQUFBQUFBQUFBQUFBQ==\",\"size\":16},"
 			"{\"arena\":6,\"bytes\":\"BgYGBgYGBgYGBgYGBgYGBg==\",\"size\":16},"
 			"{\"arena\":7,\"bytes\":\"BwcHBwcHBwcHBwcHBwcHBw==\",\"size\":16},"
-			"{\"arena\":8,\"bytes\":\"CAgICAgICAgICAgICAgICA==\",\"size\":16}"
+			"{\"arena\":8,\"bytes\":\"CAgICAgICAgICAgICAgICA==\",\"size\":16},"
+			"{\"arena\":9,\"bytes\":\"CQkJCQkJCQkJCQkJCQkJCQ==\",\"size\":16}"
 		"],"
 		"\"snaps\":["
 			"{\"name\":\"[stack]\",\"addr\":8796092882944,\"addr_end\":8796092883200,\"size\":256,\"data\":\"8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8A==\",\"perm\":7,\"user\":0,\"shared\":true}"
@@ -36,7 +37,7 @@ static Sdb *ref_db() {
 	return db;
 }
 
-static RDebugSession *ref_session() {
+static RDebugSession *ref_session(void) {
 	size_t i;
 	RDebugSession *s = r_debug_session_new ();
 	if (!s) {
@@ -83,7 +84,7 @@ static RDebugSession *ref_session() {
 
 static void diff_cb(const SdbDiff *diff, void *user) {
 	char buf[2048];
-	if (sdb_diff_format (buf, sizeof(buf), diff) < 0) {
+	if (sdb_diff_format (buf, sizeof (buf), diff) < 0) {
 		return;
 	}
 	printf ("%s\n", buf);
@@ -197,7 +198,7 @@ static bool test_session_load(void) {
 	mu_end;
 }
 
-int all_tests() {
+int all_tests(void) {
 	mu_run_test (test_session_save);
 	mu_run_test (test_session_load);
 	return tests_passed != tests_run;

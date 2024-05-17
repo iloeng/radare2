@@ -19,9 +19,8 @@
    MA 02110-1301, USA.  */
 
 
-#include <r_types.h>
 #include <r_util.h>
-#include "disas-asm.h"
+#include "../../../include/disas-asm.h"
 #include "xtensa-isa.h"
 #include "xtensa-isa-internal.h"
 
@@ -59,6 +58,7 @@ static int filename_cmp(const char *s1, const char *s2) {
     }
 #endif
 }
+// XXX globals
 xtensa_isa_status xtisa_errno;
 char xtisa_error_msg[1024];
 
@@ -71,7 +71,7 @@ xtensa_isa_errno (xtensa_isa isa __attribute__ ((unused)))
 
 
 char *
-xtensa_isa_error_msg (xtensa_isa isa __attribute__ ((unused)))
+xtensa_isa_error_msg(xtensa_isa isa __attribute__ ((unused)))
 {
   return xtisa_error_msg;
 }

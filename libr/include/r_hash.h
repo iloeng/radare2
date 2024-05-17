@@ -1,15 +1,33 @@
+/* radare - LGPL - Copyright 2009-2024 - pancake */
+
 #ifndef R2_HASH_H
 #define R2_HASH_H
 
-#include "r_types.h"
-#include "r_util/r_mem.h"
-#include "r_util/r_log.h"
+#include <r_types.h>
+#include <r_util/r_mem.h>
+#include <r_util/r_log.h>
+#include <r_lib.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 R_LIB_VERSION_HEADER (r_hash);
+
+#if 0
+typedef struct r_hash_plugin_t {
+	RPluginMeta meta;
+	bool support_hmac;
+	void *(*context_new)();
+	void (*context_free)(void *context);
+	int (*digest_size)(void *context);
+	int (*block_size)(void *context);
+	bool (*init)(void *context);
+	bool (*update)(void *context, const ut8 *data, ut64 size);
+	bool (*final)(void *context, ut8 *digest);
+	bool (*small_block)(const ut8 *data, ut64 size, ut8 **digest, int *digest_size);
+} RHashPlugin;
+#endif
 
 #if WANT_SSL_CRYPTO
 #include <openssl/sha.h>
@@ -386,10 +404,12 @@ enum HASH_INDICES {
 	R_HASH_IDX_FLETCHER32,
 	R_HASH_IDX_FLETCHER64,
 	R_HASH_IDX_SIP,
+	R_HASH_IDX_ELF,
 	R_HASH_NUM_INDICES
 };
 
 #define R_HASH_NONE 0
+#define R_HASH_ELF (1ULL << R_HASH_IDX_ELF)
 #define R_HASH_MD5 (1ULL << R_HASH_IDX_MD5)
 #define R_HASH_SHA1 (1ULL << R_HASH_IDX_SHA1)
 #define R_HASH_SHA256 (1ULL << R_HASH_IDX_SHA256)
@@ -486,7 +506,6 @@ enum HASH_INDICES {
 #define R_HASH_CRC64_ISO (1ULL << R_HASH_IDX_CRC64_ISO)
 #endif /* #if R_HAVE_CRC64 */
 #define R_HASH_SIP (1ULL << R_HASH_IDX_SIP)
-
 #define R_HASH_ALL ((1ULL << R_MIN(63, R_HASH_NUM_INDICES))-1)
 
 #ifdef R_API
@@ -504,6 +523,7 @@ R_API ut8 *r_hash_do_sha256(RHash *ctx, const ut8 *input, int len);
 R_API ut8 *r_hash_do_sha384(RHash *ctx, const ut8 *input, int len);
 R_API ut8 *r_hash_do_sha512(RHash *ctx, const ut8 *input, int len);
 R_API ut8 *r_hash_do_hmac_sha256(RHash *ctx, const ut8 *input, int len, const ut8 *key, int klen);
+R_API ut8 *r_hash_do_elf(RHash *ctx, const ut8 *input, int len);
 
 R_API char *r_hash_tostring(RHash *ctx, const char *name, const ut8 *data, int len);
 

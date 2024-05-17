@@ -12,9 +12,18 @@ struct snes_asm_flags {
 	ut8 X;
 };
 
-static R_TH_LOCAL struct snes_asm_flags snesflags = {0};
+static bool snes_init(RArchSession *s) {
+	r_return_val_if_fail (s && !s->data, false);
+	s->data = R_NEW0 (struct snes_asm_flags);
+	return s->data? true: false;
+}
 
-static char *snes_disass(ut64 pc, const ut8 *buf, int len) {
+static bool snes_fini(RArchSession *s) {
+	R_FREE (s->data);
+	return true;
+}
+
+static char *snes_disass(struct snes_asm_flags snesflags, ut64 pc, const ut8 *buf, int len) {
 	int M_flag = snesflags.M;
 	int X_flag = snesflags.X;
 	snes_op_t *s_op = &snes_op[buf[0]];
@@ -67,25 +76,26 @@ static char *snes_disass(ut64 pc, const ut8 *buf, int len) {
 
 static int snes_info(RArchSession *as, ut32 q) {
 	switch (q) {
-	case R_ANAL_ARCHINFO_ALIGN:
+	case R_ARCH_INFO_CODE_ALIGN:
 		return 1;
-	case R_ANAL_ARCHINFO_MAX_OP_SIZE:
+	case R_ARCH_INFO_MAXOP_SIZE:
 		// some ops accept newline terminated strings of arbitrary len...
 		return 3;
-	case R_ANAL_ARCHINFO_INV_OP_SIZE:
+	case R_ARCH_INFO_INVOP_SIZE:
 		return 1;
-	case R_ANAL_ARCHINFO_MIN_OP_SIZE:
+	case R_ARCH_INFO_MINOP_SIZE:
 		return 1;
 	}
 	return -1;
 }
 
 static bool snes_anop(RArchSession *as, RAnalOp *op, RArchDecodeMask mask) {
+	struct snes_asm_flags *snesflags = as->data;
 	const ut64 addr = op->addr;
 	const ut8 *data = op->bytes;
 	const int len = op->size;
 
-	int opsize = snes_op_get_size (snesflags.M, snesflags.X, &snes_op[data[0]]);
+	int opsize = snes_op_get_size (snesflags->M, snesflags->X, &snes_op[data[0]]);
 	op->size = opsize;
 	if (opsize > len) {
 		r_anal_op_set_mnemonic (op, addr, "truncated");
@@ -96,7 +106,7 @@ static bool snes_anop(RArchSession *as, RAnalOp *op, RArchDecodeMask mask) {
 	op->addr = addr;
 	op->type = R_ANAL_OP_TYPE_UNK;
 	if (mask & R_ARCH_OP_MASK_DISASM) {
-		op->mnemonic = snes_disass (addr, data, len);
+		op->mnemonic = snes_disass (*snesflags, addr, data, len);
 	}
 	switch (data[0]) {
 	case 0xea: // nop
@@ -306,33 +316,37 @@ static bool snes_anop(RArchSession *as, RAnalOp *op, RArchDecodeMask mask) {
 		break;
 	case 0xc2: // rep
 		if (((st8)data[1]) & 0x10) {
-			snesflags.X = 0;
+			snesflags->X = 0;
 		}
 		if (((st8)data[1]) & 0x20) {
-			snesflags.M = 0;
+			snesflags->M = 0;
 		}
 		break;
 	case 0xe2: // sep
 		if (((st8)data[1]) & 0x10) {
-			snesflags.X = 1;
+			snesflags->X = 1;
 		}
 		if (((st8)data[1]) & 0x20) {
-			snesflags.M = 1;
+			snesflags->M = 1;
 		}
 		break;
 	}
 	return true;
 }
 
-RArchPlugin r_arch_plugin_snes = {
-	.name = "snes",
-	.desc = "SNES analysis plugin",
-	.license = "LGPL3",
-	.author = "pancake",
+const RArchPlugin r_arch_plugin_snes = {
+	.meta = {
+		.name = "snes",
+		.desc = "SNES analysis plugin",
+		.license = "LGPL3",
+		.author = "pancake",
+	},
 	.arch = "snes", // modified 6502 ?
 	.bits = R_SYS_BITS_PACK2 (8, 16),
 	.decode = snes_anop,
 	.info = snes_info,
+	.init = snes_init,
+	.fini = snes_fini,
 };
 
 #ifndef R2_PLUGIN_INCORE

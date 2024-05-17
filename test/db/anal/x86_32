@@ -594,7 +594,7 @@ af;afb;afb @ 0x40dfd0
 EOF
 EXPECT=<<EOF
 0x00401000 0x00401002 00:0000 2 j 0x00401012
-0x00401012 0x00401059 00:0000 71 j 0x0040dfd0
+0x00401012 0x00401059 00:0000 71
 0x0040dfd0 0x0040e075 00:0000 165 j 0x0040e0af f 0x0040e075
 0x0040e075 0x0040e094 00:0000 31 j 0x0040e0a8
 0x0040e094 0x0040e0a8 00:0000 20 j 0x0040e0a8
@@ -1487,7 +1487,7 @@ RUN
 
 NAME=resolve reloc symbols 2
 FILE=bins/elf/libc.so.6
-CMDS=ir~0x[3]
+CMDS=ir~0x[4]
 EXPECT=<<EOF
 0x001bf3c0
 _res
@@ -2652,6 +2652,16 @@ ifunc_89210
 ifunc_8a9d0
 ifunc_89840
 ifunc_8a6c0
+0x00000038
+0x00000030
+0x00000050
+0x00000040
+0x00000048
+0x00000058
+0x00000060
+0x00000078
+0x00000080
+0x00000088
 stderr
 error_one_per_line
 realloc
@@ -2664,6 +2674,7 @@ __ctype32_tolower
 _rtld_global
 __progname
 argp_err_exit_status
+0x00000028
 mallwatch
 __rcmd_errstr
 __libc_enable_secure
@@ -2677,9 +2688,11 @@ __timezone
 ifunc_a4800
 memalign
 _dl_exception_create
+0x00000074
 _rtld_global_ro
 __malloc_initialize_hook
 ifunc_90b10
+0x00000010
 optarg
 __ctype_tolower
 __ctype_toupper
@@ -2697,6 +2710,7 @@ ifunc_a5f90
 ifunc_8ab70
 __daylight
 __memalign_hook
+0x00000020
 __malloc_hook
 __free_hook
 _nl_domain_bindings
@@ -2706,6 +2720,7 @@ _dl_find_dso_for_object
 argp_program_bug_address
 __key_decryptsession_pk_LOCAL
 h_errlist
+0x00000018
 program_invocation_short_name
 calloc
 optind
@@ -2731,6 +2746,7 @@ opterr
 __ctype32_toupper
 __realloc_hook
 _dl_argv
+0x00000008
 0x00183fe9
 0x00183f44
 0x00183f54
@@ -3125,7 +3141,6 @@ EXPECT=<<EOF
     "mask": "ffff",
     "esil": "eax,eax,^=,$z,zf,:=,$p,pf,:=,31,$s,sf,:=,0,cf,:=,0,of,:=",
     "sign": false,
-    "prefix": 0,
     "id": 1503,
     "opex": {
       "operands": [
@@ -3149,8 +3164,6 @@ EXPECT=<<EOF
     "size": 2,
     "type": "xor",
     "esilcost": 0,
-    "scale": 0,
-    "refptr": 0,
     "cycles": 1,
     "failcycles": 0,
     "delay": 0,
@@ -3180,7 +3193,6 @@ EXPECT=<<EOF
     "mask": "ffff",
     "esil": "4,esp,-=,eflags,esp,=[4]",
     "sign": false,
-    "prefix": 0,
     "id": 612,
     "opex": {
       "operands": [
@@ -3197,8 +3209,6 @@ EXPECT=<<EOF
     "size": 2,
     "type": "upush",
     "esilcost": 12,
-    "scale": 0,
-    "refptr": 0,
     "cycles": 2,
     "failcycles": 0,
     "delay": 0,
@@ -3213,7 +3223,7 @@ RUN
 NAME=reflines offset
 FILE=malloc://1023
 CMDS=<<EOF
-e asm.calls=false
+e asm.cmt.calls=false
 e asm.bits=32
 e asm.cpu=x86
 e asm.arch=x86
@@ -3277,7 +3287,7 @@ RUN
 NAME=reflines offset (ascii)
 FILE=malloc://1023
 CMDS=<<EOF
-e asm.calls=false
+e asm.cmt.calls=false
 e asm.bits=32
 e asm.cpu=x86
 e anal.cpu=x86
@@ -3360,7 +3370,7 @@ e asm.bits=32
 e asm.arch = x86
 e anal.arch = x86
 e anal.vars.stackname=true
-e asm.calls=false
+e asm.cmt.calls=false
 wx 83ec108b44241899f77c241c8b44241401d08944240c8b44242099f77c24288b44240c01d0894424088b5424148b44240c8d0c028b44242c99f7f98b44240801d0894424048b54240c8b44240801c28b44240401d083c410c38d4c240483e4f0ff71fc5589e55183ec046a076a066a056a046a036a026a01e883ffffff83c41c83ec08506844850408e847feffff83c410b8000000008b4dfcc98d61fcc36690669066909055575653e887feffff81c3371b000083ec0c8b6c24208db30cffffffe8d3fdffff8d8308ffffff29c6c1fe0285f6742531ff8db60000000083ec04ff74242cff74242c55ff94bb08ffffff83c70183c41039f775e383c40c5b5e5f
 e asm.bits=32
 e asm.comments=false
@@ -3423,7 +3433,7 @@ ao 1
 p8 1
 EOF
 EXPECT=<<EOF
-18
+16
 address: 0x0
 opcode: nop
 esilcost: 0
@@ -3432,10 +3442,8 @@ pseudo: no
 mnemonic: nop
 description: no operation
 mask: ff
-prefix: 0
 id: 510
 bytes: 90
-refptr: 0
 size: 1
 sign: false
 type: nop
@@ -3601,7 +3609,7 @@ e asm.bits=32
 e io.cache=true
 $orig_end=?e `om,va_end/cols~[0]:3`
 omr 1 `om,size/cols~[0]:3`+2
-s `$orig_end`
+s `$orig_end`+1
 wa jmp entry0
 aF
 aae

@@ -135,7 +135,7 @@ static ut64 __lseek(RIO *io, RIODesc *fd, ut64 offset, int whence) {
 	switch (whence) {
 	case SEEK_SET: return offset;
 	case SEEK_CUR: return io->off + offset;
-	case SEEK_END: return UT64_MAX;
+	case SEEK_END: return UT64_MAX - 1;
 	}
 	return offset;
 }
@@ -180,9 +180,11 @@ static char *__system(RIO *io, RIODesc *fd, const char *msg) {
 }
 
 RIOPlugin r_io_plugin_r2pipe = {
-	.name = "r2pipe",
-	.desc = "r2pipe io plugin",
-	.license = "MIT",
+	.meta = {
+		.name = "r2pipe",
+		.desc = "r2pipe io plugin",
+		.license = "MIT",
+	},
 	.uris = "r2pipe://",
 	.open = __open,
 	.close = __close,

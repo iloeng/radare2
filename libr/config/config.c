@@ -70,7 +70,7 @@ static void config_print_value_json(RConfig *cfg, PJ *pj, RConfigNode *node) {
 	}
 	char *sval = r_str_escape (val);
 	if (r_config_node_is_bool (node) || r_config_node_is_int (node)) {
-		if (!strncmp (val, "0x", 2)) {
+		if (r_str_startswith (val, "0x")) {
 			ut64 n = r_num_get (NULL, val);
 			if (pj) {
 				pj_n (pj, n);
@@ -79,7 +79,14 @@ static void config_print_value_json(RConfig *cfg, PJ *pj, RConfigNode *node) {
 			}
 		} else if (r_str_isnumber (val) || (*val /* HACK */ && r_str_is_bool (val))) {
 			if (pj) {
-				pj_s (pj, val);
+				if (r_str_is_bool (val)) {
+					pj_b (pj, val);
+				} else if (r_str_isnumber (val)) {
+					ut64 n = r_num_get (NULL, val);
+					pj_n (pj, n);
+				} else {
+					pj_s (pj, val);
+				}
 			} else {
 				cfg->cb_printf ("%s", val);  // TODO: always use true/false for bool json str
 			}
@@ -163,7 +170,7 @@ R_API void r_config_list(RConfig *cfg, const char *str, int rad) {
 	const char *sfx = "";
 	const char *pfx = "";
 	int len = 0;
-	bool verbose = false;
+	bool found, verbose = false;
 	PJ *pj = NULL;
 
 	if (!IS_NULLSTR (str)) {
@@ -215,15 +222,21 @@ R_API void r_config_list(RConfig *cfg, const char *str, int rad) {
 	case 2:
 		r_list_foreach (cfg->nodes, iter, node) {
 			if (!str || (str && (!strncmp (str, node->name, len)))) {
-				if (!str || !strncmp (str, node->name, len)) {
-					if (R_STR_ISNOTEMPTY (str)) {
-						cfg->cb_printf ("%s\n", r_str_get (node->desc));
-					} else {
-						cfg->cb_printf ("%20s: %s\n", node->name,
-							r_str_get (node->desc));
-					}
-				}
+				cfg->cb_printf ("%20s: %s\n", node->name, r_str_get (node->desc));
 			}
+		}
+		break;
+	case 3:
+		found = false;
+		r_list_foreach (cfg->nodes, iter, node) {
+			if (!str || (str && (!strcmp (str, node->name)))) {
+				found = true;
+				cfg->cb_printf ("%s\n", r_str_get (node->desc));
+				break;
+			}
+		}
+		if (!found) {
+			cfg->cb_printf ("Key not found. Try e??%s\n", str);
 		}
 		break;
 	case 's':
@@ -637,7 +650,7 @@ static void eval_config_string(RConfig *cfg, char *name) {
 			(void) r_config_set (cfg, name, eq);
 		}
 	} else {
-		if (r_str_endswith (name, ".")) {
+		if (r_str_endswith (name, ".") && !r_str_endswith (name, "..")) {
 			r_config_list (cfg, name, 0);
 		} else {
 			const char *v = r_config_get (cfg, name);

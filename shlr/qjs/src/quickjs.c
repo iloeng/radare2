@@ -43,6 +43,8 @@
 #elif defined(__FreeBSD__)
 #include <malloc_np.h>
 #include <sys/time.h>
+#elif defined(_MSC_VER)
+#include <malloc.h>
 #endif
 
 #include "cutils.h"
@@ -6480,7 +6482,7 @@ static void dbuf_put_leb128(DynBuf *s, uint32_t v)
 static void dbuf_put_sleb128(DynBuf *s, int32_t v1)
 {
     uint32_t v = v1;
-    dbuf_put_leb128(s, (2 * v) ^ -(v >> 31));
+    dbuf_put_leb128(s, (2 * v) ^ -(int64_t)(v >> 31));
 }
 
 static int get_leb128(uint32_t *pval, const uint8_t *buf,
@@ -6513,7 +6515,7 @@ static int get_sleb128(int32_t *pval, const uint8_t *buf,
         *pval = 0;
         return -1;
     }
-    *pval = (val >> 1) ^ -(val & 1);
+    *pval = (val >> 1) ^ -(int64_t)(val & 1);
     return ret;
 }
 
@@ -42511,7 +42513,7 @@ static JSValue js___date_clock(JSContext *ctx, JSValueConst this_val,
 /* OS dependent. d = argv[0] is in ms from 1970. Return the difference
    between UTC time and local time 'd' in minutes */
 static int getTimezoneOffset(int64_t time) {
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(_AIX)
     /* XXX: TODO */
     return 0;
 #else
@@ -45501,7 +45503,7 @@ static int js_proxy_delete_property(JSContext *ctx, JSValueConst obj,
     if (JS_IsUndefined(method)) {
         return JS_DeleteProperty(ctx, s->target, atom, 0);
     }
-    atom_val = JS_AtomToValue(ctx, atom);;
+    atom_val = JS_AtomToValue(ctx, atom);
     if (JS_IsException(atom_val)) {
         JS_FreeValue(ctx, method);
         return -1;

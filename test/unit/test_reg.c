@@ -45,6 +45,9 @@ bool test_r_reg_get_value_gpr(void) {
 	reg = r_reg_new ();
 	mu_assert_notnull (reg, "r_reg_new () failed");
 
+	// force little endian
+	reg->config->endian = R_SYS_ENDIAN_LITTLE;
+
 	r_reg_set_profile_string (reg, "=A0 eax\n\
 		gpr eax .32 0 0\n\
 		gpr	ax	.16	0	0\n\
@@ -84,6 +87,11 @@ bool test_r_reg_get_value_gpr(void) {
 
 	value = r_reg_getv (reg, "bx");
 	mu_assert_eq (value, 0xcdef, "get bx register value");
+
+	// force little endian
+	reg->config->endian = R_SYS_ENDIAN_BIG;
+	value = r_reg_getv (reg, "ax");
+	mu_assert_eq (value, 26437, "get big endian ax register value");
 
 	r_reg_free (reg);
 	mu_end;
@@ -178,15 +186,15 @@ bool test_r_reg_get_list(void) {
 	bool success = r_reg_set_profile_string (reg,
 		"gpr		eax		.32	24	0\n\
 		fpu			sf0		.32	304	0\n\
-		vec128@fpu		xmm0	.64	160	4");
+		vec128		xmm0	.64	160	4");
 	mu_assert_eq (success, true, "define eax, sf0 and xmm0 register");
 
 	mask = ((int)1 << R_REG_TYPE_VEC128);
-	mu_assert_eq ((reg->regset[R_REG_TYPE_FPU].maskregstype & mask), mask,
+	mu_assert_eq ((reg->regset[R_REG_TYPE_VEC128].maskregstype & mask), mask,
 		"xmm0 stored as R_REG_TYPE_FPU");
 
 	l = r_reg_get_list (reg, R_REG_TYPE_VEC128);
-	mu_assert_eq (r_list_length (l), 2, "sf0 and xmm0 stored as R_REG_TYPE_FPU");
+	mu_assert_eq (r_list_length (l), 1, "sf0 and xmm0 stored as R_REG_TYPE_FPU");
 
 	r_reg_free (reg);
 	mu_end;
@@ -234,7 +242,7 @@ bool test_r_reg_get_pack(void) {
 	mu_end;
 }
 
-int all_tests() {
+int all_tests(void) {
 	mu_run_test (test_r_reg_set_name);
 	mu_run_test (test_r_reg_set_profile_string);
 	mu_run_test (test_r_reg_get_value_gpr);
@@ -246,5 +254,5 @@ int all_tests() {
 }
 
 int main(int argc, char **argv) {
-	return all_tests();
+	return all_tests ();
 }

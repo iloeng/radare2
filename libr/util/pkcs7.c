@@ -445,8 +445,8 @@ static void r_x509_signedinfo_dump(RPKCS7SignerInfo *si, const char *pad, RStrBu
 	s = si->digestEncryptionAlgorithm.algorithm;
 	r_strbuf_appendf (sb, "%sDigest Encryption Algorithm\n%s%s\n", pad2, pad3, s ? s->string : "Missing");
 
-	//	if ((o = si->encryptedDigest)) s = r_asn1_stringify_bytes (o->binary, o->length);
-	//	else s = NULL;
+	//	if ((o = si->encryptedDigest)) { s = r_asn1_stringify_bytes (o->binary, o->length);
+	//	} else { s = NULL; }
 	//	eprintf ("%sEncrypted Digest: %u bytes\n%s\n", pad2, o ? o->length : 0, s ? s->string : "Missing");
 	//	r_asn1_string_free (s);
 	r_strbuf_appendf (sb, "%sEncrypted Digest: %u bytes\n", pad2, o ? o->length : 0);
@@ -632,6 +632,9 @@ static bool r_pkcs7_parse_spcdata(SpcAttributeTypeAndOptionalValue *data, RASN1O
 	}
 	data->type = r_asn1_stringify_oid (object->list.objects[0]->sector, object->list.objects[0]->length);
 	if (!data->type) {
+		return false;
+	}
+	if (object->list.length < 2) {
 		return false;
 	}
 	RASN1Object *obj1 = object->list.objects[1];

@@ -163,6 +163,13 @@ EXT_SO=so
 EXT_EXE=
 TH_LIBS=
 endif
+ifeq (${OSTYPE},aix)
+CFLAGS+=-DR2__UNIX__=1
+EXT_AR=a
+EXT_SO=so
+EXT_EXE=
+TH_LIBS=
+endif
 
 ifeq (${EXT_SO},)
 main:
@@ -184,13 +191,13 @@ libname=-shared -o $1.${EXT_SO}
 else
 ifeq (${OSTYPE},darwin)
 ifeq (${HAVE_LIBVERSION},1)
-libname=-dynamiclib -o $1.${EXT_SO} ${LDFLAGS_SONAME}$1.${LIBVERSION}.${EXT_SO}
+libname=-dynamiclib -o $1.${EXT_SO} ${LDFLAGS_SONAME}$1.${ABIVERSION}.${EXT_SO}
 else
 libname=-dynamiclib -o $1.${EXT_SO}
 endif
 else
 ifeq (${HAVE_LIBVERSION},1)
-libname=-shared -o $1.${EXT_SO} ${LDFLAGS_SONAME}$1.${EXT_SO}.${LIBVERSION}
+libname=-shared -o $1.${EXT_SO} ${LDFLAGS_SONAME}$1.${EXT_SO}.${ABIVERSION}
 else
 libname=-shared -o $1.${EXT_SO}
 endif

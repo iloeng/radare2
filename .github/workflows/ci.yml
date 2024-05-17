@@ -64,6 +64,7 @@ jobs:
       env:
         CFLAGS: -O0
       run: |
+        sudo apt update
         sudo apt install -y libmagic-dev
         git clean -xdf ; rm -rf shlr/capstone
         cp -f dist/plugins-cfg/plugins.nocs.cfg plugins.cfg
@@ -79,11 +80,6 @@ jobs:
         cat /tmp/m.1
         echo ===== m.2
         cat /tmp/m.2
-    #- name: Building muon/samu
-    #  run: |
-    #    r2pm -gci muon # installs samurai as dependency
-        # ./preconfigure
-        # XXX muon setup m && samu -C m -j5
   build-acr-gperf:
     name: linux-acr-gperf
     runs-on: ubuntu-20.04
@@ -94,6 +90,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install meson ninja r2pipe wget
+        sudo apt update --assume-yes
         sudo apt install gperf
     - name: Installing with symlinks
       run: |
@@ -105,15 +102,16 @@ jobs:
       with:
         name: r2r.json
         path: /tmp/r2r.json
+  # TODO: Add job to build with capstone-next, for now v5 is stable
   build-syscapstone:
     name: linux-sys-capstone
     runs-on: ubuntu-20.04
     steps:
     - name: Checkout
       uses: actions/checkout@v3
-    - name: Installing capstone
+    - name: Installing capstone v5
       run: |
-        git clone --branch next --single-branch --depth=1 https://github.com/capstone-engine/capstone
+        git clone --branch v5 --single-branch --depth=1 https://github.com/capstone-engine/capstone
         cd capstone && ( git log | head ) && sh make.sh && sudo make install
     - name: Installing r2 with sys-capstone
       run: |
@@ -150,6 +148,10 @@ jobs:
       run: |
         export LD_LIBRARY_PATH=/usr/local/lib
         make tests
+    - uses: actions/upload-artifact@v3
+      with:
+        name: results.json
+        path: test/results.json
   linux-static-meson:
     if: contains(github.ref, 'master') || contains(github.ref, 'ci-')
     continue-on-error: true
@@ -159,13 +161,18 @@ jobs:
       uses: actions/checkout@v3
     - name: Installing the musl runtime
       run: |
+        sudo apt update --assume-yes
         sudo apt install musl-tools
-    - name: Static r2 build with meson
-      run: |
         sudo apt-get --assume-yes install python3-wheel python3-setuptools cabextract gperf
         sudo pip3 install meson ninja
+    - name: Static r2 build with meson
+      run: |
         CFLAGS="-static" LDFLAGS="-static" meson --prefix=${HOME}/.local --buildtype release --default-library static build
         ninja -C build && ninja -C build install
+    - name: meson gpl-less build
+      run: |
+        meson -Dnogpl=true build-nogpl
+        ninja -C build-nogpl
   macos-test:
     runs-on: macos-11
     if: contains(github.ref, 'master') || contains(github.ref, 'ci-')
@@ -269,14 +276,16 @@ jobs:
     - name: Running tests
       run: |
         export ASAN_OPTIONS=detect_leaks=0
+        export R2R_TIMEOUT=3600
         export R2R_SKIP_ARCHOS=1
         export LD_LIBRARY_PATH=/usr/local/lib
         export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libasan.so.5
-        r2r test/db/cmd
+        r2r -t 3600 test/db/cmd
     - name: Run fuzz tests
       run: |
         export ASAN_OPTIONS=detect_leaks=0
         export R2R_SKIP_ARCHOS=1
+        export R2R_TIMEOUT=3600
         export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libasan.so.5
         make -C test fuzz-tests
   linux-asan-fuzz:
@@ -296,12 +305,14 @@ jobs:
       run: |
         export ASAN_OPTIONS=detect_leaks=0
         export R2R_SKIP_ARCHOS=1
+        export R2R_TIMEOUT=3600
         export LD_LIBRARY_PATH=/usr/local/lib
         export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libasan.so.5
         make tests
     - name: Run fuzz tests
       run: |
         export ASAN_OPTIONS=detect_leaks=0
+        export R2R_TIMEOUT=3600
         export R2R_SKIP_ARCHOS=1
         export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libasan.so.5
         make -C test fuzz-tests
@@ -332,7 +343,7 @@ jobs:
     - name: Build with meson + ninja
       shell: cmd
       run: |
-        REM preconfigure
+        call preconfigure
         call configure release
         call make
     - name: Test executable
@@ -341,6 +352,12 @@ jobs:
       run: |
         cd prefix\bin
         radare2 -v
+    - name: Test executable again
+      # continue-on-error: true
+      shell: cmd
+      run: |
+        cd prefix\bin
+        radare2 -qc "?e Hello" -
   w32-mingw:
     if: contains(github.ref, 'master') || contains(github.ref, 'ci-')
     name: w32-mingw

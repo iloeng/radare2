@@ -519,19 +519,16 @@ R_API int r_utf8_encode(ut8 *ptr, const RRune ch) {
 	if (ch < 0x80) {
 		ptr[0] = (ut8)ch;
 		return 1;
-	}
-	else if (ch < 0x800) {
+	} else if (ch < 0x800) {
 		ptr[0] = 0xc0 | (ch >> 6);
 		ptr[1] = 0x80 | (ch & 0x3f);
 		return 2;
-	}
-	else if (ch < 0x10000) {
+	} else if (ch < 0x10000) {
 		ptr[0] = 0xe0 | (ch >> 12);
 		ptr[1] = 0x80 | ((ch >> 6) & 0x3f);
 		ptr[2] = 0x80 | (ch & 0x3f);
 		return 3;
-	}
-	else if (ch < 0x200000) {
+	} else if (ch < 0x200000) {
 		ptr[0] = 0xf0 | (ch >> 18);
 		ptr[1] = 0x80 | ((ch >> 12) & 0x3f);
 		ptr[2] = 0x80 | ((ch >> 6) & 0x3f);
@@ -648,7 +645,10 @@ R_API char *r_utf16_to_utf8_l(const wchar_t *wc, int len) {
 }
 
 R_API wchar_t *r_utf8_to_utf16_l(const char *cstring, int len) {
-	r_return_val_if_fail (cstring && len >= -1, NULL);
+	if (!cstring || len < -1) {
+		return NULL;
+	}
+	// r_return_val_if_fail (cstring && len >= -1, NULL);
 
 	if (len == -1) {
 		len = strlen (cstring);
@@ -699,7 +699,11 @@ R_API char *r_utf8_to_acp_l(const char *str, int len) {
 }
 
 R_API char *r_acp_to_utf8_l(const char *str, int len) {
-	r_return_val_if_fail (str && len >= -1, NULL);
+	// there are some asserts that are boring to debug, make the precondition at runtime
+	// r_return_val_if_fail (str && len >= -1, NULL);
+	if (!str || len < -1) {
+		return NULL;
+	}
 	if (len == -1) {
 		len = strlen (str);
 	}

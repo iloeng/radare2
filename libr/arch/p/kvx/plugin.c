@@ -227,25 +227,22 @@ static const char *kvx_reg_profile = ""
  * line for readability. The function kvx_next_insn does all the magic
  * of figuring out if the next instruction is already decoded in this
  * bundle or if it needs to decode a new bundle.
- * was:
- *    static R_TH_LOCAL bundle_t bundle;
- * now is allocated per RArchSession in init/fini
+ * The bundle_t struct is now allocated per RArchSession in init/fini.
  */
 
 static bool kvx_init(RArchSession *s) {
-	r_return_val_if_fail (!s->user, false);
-	s->user = malloc (sizeof (bundle_t));
-	return s->user? true: false;
+	r_return_val_if_fail (s && !s->data, false);
+	s->data = R_NEW0 (bundle_t);
+	return s->data? true: false;
 }
 
 static bool kvx_fini(RArchSession *s) {
-	free (s->user);
-	s->user = NULL;
+	R_FREE (s->data);
 	return true;
 }
 
 static bool kvx_op(RArchSession *a, RAnalOp *op, RArchDecodeMask mask) {
-	bundle_t *bundle = a->user;
+	bundle_t *bundle = a->data;
 	const ut64 addr = op->addr;
 	const size_t len = op->size;
 	const ut8 *data = op->bytes;
@@ -295,11 +292,11 @@ static bool kvx_op(RArchSession *a, RAnalOp *op, RArchDecodeMask mask) {
 
 static int kvx_info(RArchSession *a, ut32 query) {
 	switch (query) {
-	case R_ARCH_INFO_MIN_OP_SIZE:
+	case R_ARCH_INFO_MINOP_SIZE:
 		return 4;
-	case R_ARCH_INFO_MAX_OP_SIZE:
+	case R_ARCH_INFO_MAXOP_SIZE:
 		return 12;
-	case R_ARCH_INFO_ALIGN:
+	case R_ARCH_INFO_CODE_ALIGN:
 		return 4;
 	case R_ARCH_INFO_DATA_ALIGN:
 		return 0;
@@ -312,9 +309,11 @@ static char *kvx_regs(RArchSession *a) {
 	return strdup (kvx_reg_profile);
 }
 
-RArchPlugin r_arch_plugin_kvx = {
-	.name = "kvx",
-	.desc = "Kalray VLIW core",
+const RArchPlugin r_arch_plugin_kvx = {
+	.meta = {
+		.name = "kvx",
+		.desc = "Kalray VLIW core",
+	},
 	.arch = "kvx",
 	.bits = R_SYS_BITS_PACK1 (64),
 	.endian = R_SYS_ENDIAN_LITTLE,

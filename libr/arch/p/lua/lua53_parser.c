@@ -41,7 +41,7 @@ typedef struct lua_function {
 	ut8 isVarArg;
 	ut8 maxStackSize;
 
-	struct lua_function *parent_func;// if != NULL, should always be valid
+	struct lua_function *parent_func; // if != NULL, should always be valid
 
 	ut64 const_size;
 	ut64 code_size;
@@ -418,7 +418,11 @@ static ut64 parseString(const ut8 *data, ut64 offset, const ut64 size, ParseStru
 }
 
 static ut64 parseStringR(const ut8 *data, ut64 offset, const ut64 size, char **str_ptr, ut64 *str_len, ParseStruct *parseStruct){
-	ut64 functionNameSize = data[offset + 0];
+	if (offset + 8 > size) {
+		R_LOG_DEBUG ("Prevented oobread");
+		return 0;
+	}
+	ut64 functionNameSize = data[offset];
 	offset += 1;
 	if (functionNameSize == 0xFF) {
 		functionNameSize = parseSize (data + offset);
@@ -426,7 +430,7 @@ static ut64 parseStringR(const ut8 *data, ut64 offset, const ut64 size, char **s
 	}
 	if (functionNameSize != 0) {
 		if (str_ptr) {
-			*str_ptr = (char *) data + offset;
+			*str_ptr = r_str_ndup ((char *) (data + offset), functionNameSize - 1);
 		}
 		if (str_len) {
 			*str_len = functionNameSize - 1;

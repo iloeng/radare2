@@ -1,9 +1,9 @@
-/* radare2 - LGPL - Copyright 2021 - condret */
+/* radare2 - LGPL - Copyright 2021-2023 - condret */
 
 #include <r_anal.h>
-#include <r_list.h>
-#include <config.h>
 #include "../config.h"
+
+// R2R db/cmd/cmd_aes
 
 static REsilPlugin *esil_static_plugins[] = {
 	R_ESIL_STATIC_PLUGINS
@@ -42,11 +42,38 @@ R_API bool r_esil_plugin_add(REsil *esil, REsilPlugin *plugin) {
 	return true;
 }
 
+R_API void r_esil_plugin_del(REsil *esil, const char *name) {
+	r_return_if_fail (esil && esil->plugins && name);
+	r_esil_plugin_deactivate(esil, name);
+	RListIter *iter;
+	REsilPlugin *ep;
+	r_list_foreach (esil->plugins, iter, ep) {
+		if (!strcmp (ep->meta.name, name)) {
+			r_list_delete (esil->plugins, iter);
+			return;
+		}
+	}
+}
+
+//this crap solely exists for trash generics in core
+R_API bool r_esil_plugin_remove(REsil *esil, REsilPlugin *plugin) {
+	r_return_val_if_fail (esil && esil->plugins && plugin && plugin->meta.name, false);
+	RListIter *iter;
+	REsilPlugin *ep;
+	r_list_foreach (esil->plugins, iter, ep) {
+		if (ep == plugin) {
+			r_esil_plugin_del (esil, ep->meta.name);
+			return true;
+		}
+	}
+	return false;
+}
+
 static REsilActivePlugin *_get_active_plugin(REsil *esil, const char *name) {
 	RListIter *iter;
 	REsilActivePlugin *eap;
 	r_list_foreach (esil->active_plugins, iter, eap) {
-		if (!strcmp (eap->plugin->name, name)) {
+		if (!strcmp (eap->plugin->meta.name, name)) {
 			return eap;
 		}
 	}
@@ -63,7 +90,7 @@ R_API bool r_esil_plugin_activate(REsil *esil, const char *name) {
 	RListIter *iter;
 	REsilPlugin *ep;
 	r_list_foreach (esil->plugins, iter, ep) {
-		if (!strcmp (ep->name, name)) {
+		if (!strcmp (ep->meta.name, name)) {
 			REsilActivePlugin *eap = R_NEW (REsilActivePlugin);
 			if (!eap) {
 				return false;
@@ -82,7 +109,7 @@ R_API void r_esil_plugin_deactivate(REsil *esil, const char *name) {
 	RListIter *iter;
 	REsilActivePlugin *eap;
 	r_list_foreach (esil->active_plugins, iter, eap) {
-		if (!strcmp (eap->plugin->name, name)) {
+		if (!strcmp (eap->plugin->meta.name, name)) {
 			eap->plugin->fini (esil, eap->user);
 			r_list_delete (esil->active_plugins, iter);
 			free (eap);

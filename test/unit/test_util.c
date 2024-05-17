@@ -1,5 +1,6 @@
 #include <r_util.h>
 #include <r_util/r_ref.h>
+#include <r_core.h>
 #include "minunit.h"
 
 static Sdb *setup_sdb(void) {
@@ -151,11 +152,34 @@ bool test_file_slurp(void) {
 	mu_end;
 }
 
+R_ALIGNED(4) static const char msg[] = "Hello World"; // const strings can have the lowerbit set
+R_TAGGED void *tagged(bool owned) {
+	if (owned) {
+		void *res = strdup ("hello world");
+		return R_TAG_NOP (res);
+	}
+	return R_TAG (msg);
+}
+
+bool test_tagged_pointers(void) {
+	void *a = tagged (false);
+	void *b = tagged (true);
+	// eprintf ("%p %p\n", a, b);
+	// eprintf ("%d %d\n", (size_t)a&1, (size_t)b&1);
+	mu_assert_eq (R_IS_TAGGED (a), 1, "tagged");
+	char *msg = R_UNTAG (a);
+	mu_assert_streq (msg, "Hello World", "faileq");
+	mu_assert_eq (R_IS_TAGGED (b), 0, "not tagged");
+	char *msg2 = R_UNTAG (b);
+	mu_assert_streq (msg2, "hello world", "faileq");
+	R_TAG_FREE (a);
+	R_TAG_FREE (b);
+	mu_end;
+}
+
 bool test_initial_underscore(void) {
 	Sdb *TDB = setup_sdb ();
-	char *s;
-
-	s = r_type_func_guess (TDB, "sym._strchr");
+	char *s = r_type_func_guess (TDB, "sym._strchr");
 	mu_assert_notnull (s, "sym._ should be ignored");
 	mu_assert_streq (s, "strchr", "strchr should be identified");
 	free (s);
@@ -204,7 +228,19 @@ bool test_references(void) {
 	mu_end;
 }
 
-int all_tests() {
+bool test_log(void) {
+	// Stand up a semi-realistic log environment with an RCore
+	RCore *core = r_core_new ();
+	r_log_set_quiet (true);
+
+	// https://github.com/radareorg/radare2/issues/22468
+	R_LOG_INFO ("%s", "");
+
+	r_core_free (core);
+	mu_end;
+}
+
+int all_tests(void) {
 	mu_run_test (test_ignore_prefixes);
 	mu_run_test (test_remove_r2_prefixes);
 	mu_run_test (test_dll_names);
@@ -212,6 +248,8 @@ int all_tests() {
 	mu_run_test (test_autonames);
 	mu_run_test (test_file_slurp);
 	mu_run_test (test_initial_underscore);
+	mu_run_test (test_tagged_pointers);
+	mu_run_test (test_log);
 	return tests_passed != tests_run;
 }
 

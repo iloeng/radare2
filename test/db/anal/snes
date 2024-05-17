@@ -24,6 +24,7 @@ arch     snes
 binsz    65536
 bits     16
 canary   false
+injprot  false
 retguard false
 crypto   false
 endian   little
@@ -46,7 +47,7 @@ minopsz 1
 maxopsz 3
 invopsz 1
 dtalign 1
-pcalign 1
+codealign 1
 0x00400000 
 0x00400039 
 0x00408399 
@@ -67,6 +68,6 @@ aac
 aflc
 EOF
 EXPECT=<<EOF
-20
+21
 EOF
 RUN

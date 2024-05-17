@@ -1,7 +1,7 @@
 include ../../global.mk
 
 NAME=r_asm
-R2DEPS=r_syscall r_util
+R2DEPS=r_syscall r_util r_esil r_crypto
 R2DEPS+=r_flag r_cons r_reg r_arch
 CFLAGS+=-DR2_PLUGIN_INCORE -Iarch/include -Iarch -I../../shlr
 CURDIR=p/
@@ -54,11 +54,11 @@ OBJS+=d/6502.o
 OBJS+=d/8051.o
 OBJS+=d/LH5801.o
 OBJS+=d/arc.o
+OBJS+=d/gb.o
 OBJS+=d/evm.o
 OBJS+=d/arm.o
 OBJS+=d/avr.o
 OBJS+=d/chip8.o
-OBJS+=d/i8080.o
 OBJS+=d/java.o
 OBJS+=d/lm32.o
 OBJS+=d/m68k.o

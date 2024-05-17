@@ -432,6 +432,7 @@ main:
   addr: 0x0040055b
   types: int main (int argc, char **argv)
   refs: sym.print
+  xrefs: entry0
   vars: fb-12:var_4h:int64_t, fb-24:var_10h:int64_t, tr83:argc:int, tr79:argv:char **
   bbhash: 9890426532f35eb3a80fe773d887714fe27d13ea125ad7e90beab16a51b74496
 (zigs) main:
@@ -441,6 +442,7 @@ main:
   addr: 0x0040055b
   types: int main (int argc, char **argv)
   refs: sym.print
+  xrefs: entry0
   vars: fb-12:var_4h:int64_t, fb-24:var_10h:int64_t, tr83:argc:int, tr79:argv:char **
   bbhash: 9890426532f35eb3a80fe773d887714fe27d13ea125ad7e90beab16a51b74496
 EOF
@@ -465,6 +467,7 @@ main:
   addr: 0x0040055b
   types: int main (int argc, char **argv)
   refs: sym.print
+  xrefs: entry0
   vars: fb-12:var_4h:int64_t, fb-24:var_10h:int64_t, tr83:argc:int, tr79:argv:char **
   bbhash: 9890426532f35eb3a80fe773d887714fe27d13ea125ad7e90beab16a51b74496
 (zigs) main:
@@ -474,6 +477,7 @@ main:
   addr: 0x0040055b
   types: int main (int argc, char **argv)
   refs: sym.print
+  xrefs: entry0
   vars: fb-12:var_4h:int64_t, fb-24:var_10h:int64_t, tr83:argc:int, tr79:argv:char **
   bbhash: 9890426532f35eb3a80fe773d887714fe27d13ea125ad7e90beab16a51b74496
 EOF
@@ -495,6 +499,7 @@ main:
   addr: 0x0040055b
   types: int main (int argc, char **argv)
   refs: sym.print
+  xrefs: entry0
   vars: fb-12:var_4h:int64_t, fb-24:var_10h:int64_t, tr83:argc:int, tr79:argv:char **
   bbhash: 9890426532f35eb3a80fe773d887714fe27d13ea125ad7e90beab16a51b74496
 EOF
@@ -515,9 +520,10 @@ foobar:
   mask: ffffffffffffffffffffffffffffffff00000000ff00000000ffffffffffffff
   graph: cc=1 nbbs=1 edges=0 ebbs=1 bbsum=32
   addr: 0x0040055b
-  realname: main
+  realname: foobar
   types: int main (int argc, char **argv)
   refs: sym.print
+  xrefs: entry0
   vars: fb-12:var_4h:int64_t, fb-24:var_10h:int64_t, tr83:argc:int, tr79:argv:char **
   bbhash: 9890426532f35eb3a80fe773d887714fe27d13ea125ad7e90beab16a51b74496
 EOF
@@ -537,9 +543,10 @@ foobar:
   mask: ffffffffffffffffffffffffffffffff00000000ff00000000ffffffffffffff
   graph: cc=1 nbbs=1 edges=0 ebbs=1 bbsum=32
   addr: 0x0040055b
-  realname: main
+  realname: foobar
   types: int main (int argc, char **argv)
   refs: sym.print
+  xrefs: entry0
   vars: fb-12:var_4h:int64_t, fb-24:var_10h:int64_t, tr83:argc:int, tr79:argv:char **
   bbhash: 9890426532f35eb3a80fe773d887714fe27d13ea125ad7e90beab16a51b74496
 EOF
@@ -1029,6 +1036,7 @@ za sym.fpathconf b 3c1c0005279c11200399e02127bdfef8afbf0100afb100fcafb000f8afbc0
 za sym.fpathconf g cc=5 nbbs=8 edges=9 ebbs=2 bbsum=176
 za sym.fpathconf o 0x00051490
 za sym.fpathconf t void sym.fpathconf (int32_t arg1, int32_t arg2)
+za sym.fpathconf r sym.__errno_location sym.__errno_location
 za sym.fpathconf v fs-8:var_100h:int32_t, fs-12:var_fch:int32_t, fs-16:var_f8h:int32_t, fs-248:var_10h:int32_t, tr4:arg1:int32_t, tr5:arg2:int32_t
 za sym.fpathconf h 52f232c2d8158ce806cadf84ed77273fb11711dfa6cb5feb997ce03c1459be43
 EOF
@@ -1048,7 +1056,7 @@ za sym._dl_malloc b 3c1c0002279cc5e40399e0218f82807427bdfff88c590000afbe00041320
 za sym._dl_malloc g cc=8 nbbs=12 edges=16 ebbs=2 bbsum=396
 za sym._dl_malloc o 0x00002a1c
 za sym._dl_malloc t void sym._dl_malloc (int32_t arg1, int32_t arg2, int32_t arg3, int32_t arg4, int32_t arg_10h)
-za sym._dl_malloc r sym._dl_dprintf sym._dl_dprintf
+za sym._dl_malloc r sym._dl_dprintf sym._dl_dprintf sym._dl_dprintf
 za sym._dl_malloc v fs-4:var_4h:int32_t, fs-12:var_24h:int32_t, fs-16:var_20h:int32_t, fs-20:var_1ch:int32_t, fs-8:var_28h:int32_t, fs-24:var_18h:int32_t, fs-32:var_10h:int32_t, fs-80:var_10h_2:int32_t, fs-76:var_14h:int32_t, tb16:arg_10h:int32_t, fs-28:var_24h_2:int32_t, fs-36:var_1ch_2:int32_t, fs-40:var_18h_2:int32_t, tr4:arg1:int32_t, tr6:arg3:int32_t, tr7:arg4:int32_t, tr5:arg2:int32_t
 za sym._dl_malloc h ec986971438cf486e01f14e9bc442d9f4c457854207d30fe4aa9f1ffdf892911
 EOF
@@ -1089,6 +1097,8 @@ RUN
 
 NAME=PowerPC function with jumpback
 FILE=bins/elf/busybox-powerpc
+# it's broken because (git)capstone-v5 vs (release)capstone-5.0 differ and break the testsuite
+BROKEN=1
 CMDS=<<EOF
 s 0x10002d70
 af
@@ -1101,7 +1111,7 @@ za fcn.10002d70 b 38a0000038c000004bfffed4:ffffffffffffffffff000000
 za fcn.10002d70 g cc=3 nbbs=8 edges=9 ebbs=1 bbsum=232
 za fcn.10002d70 o 0x10002d70
 za fcn.10002d70 t void fcn.10002d70 (int32_t arg1, int32_t arg2, int32_t arg_1030h, int32_t arg_1034h)
-za fcn.10002d70 v fs-4136:var_8h:int32_t, ts4:arg_1034h:int32_t, fs-36:var_100ch:int32_t, ts0:arg_1030h:int32_t, tr5:arg1:int32_t, tr6:arg2:int32_t
+za fcn.10002d70 v fs-4136:var_8h:int32_t, ts4:arg_1034h:int32_t, fs-36:var_100ch:int32_t, ts0:arg_1030h:int32_t, fb-4096:var_1000h:int32_t, tr5:arg1:int32_t, tr6:arg2:int32_t
 za fcn.10002d70 h 5f59f157d9e3548e81fed794bff828e7fc6ab90932a879b643d6d2a30c20c3b0
 EOF
 RUN
@@ -1130,7 +1140,7 @@ z*
 EOF
 EXPECT=<<EOF
 zs *
-za sym._Unwind_VRS_Get b 10b5041c042913d8081c00f072fd05031103030001200ce00220002b09d10f2a07d88240a418029a61681160181c00e0022010bd:ffffffffffffffffffffffffffffffffffffffffffffffff000000000000000000000000000000000000000000000000ffffffff
+za sym._Unwind_VRS_Get b 10b5041c042913d8081c00f072fd05031103030001200ce00220002b09d10f2a07d88240a418029a61681160181c00e0022010bd:ffffffffff00ff00ffffff000000ffffffffffffffffff00000000000000000000000000000000000000000000000000ffffffff
 za sym._Unwind_VRS_Get g cc=2 nbbs=4 edges=4 ebbs=1 bbsum=28
 za sym._Unwind_VRS_Get o 0x000078ea
 za sym._Unwind_VRS_Get t void sym._Unwind_VRS_Get (int16_t arg1, int16_t arg2)
@@ -1149,7 +1159,7 @@ zaf
 z* ~sym.__aeabi_unwind_cpp_pr0 b
 EOF
 EXPECT=<<EOF
-za sym.__aeabi_unwind_cpp_pr0 b 0030a0e3d4feffea
+za sym.__aeabi_unwind_cpp_pr0 b 0030a0e3d4feffea:ffffffffff000000
 EOF
 RUN
 
@@ -1163,7 +1173,7 @@ zaf
 z* ~za fcn.00001844 b
 EOF
 EXPECT=<<EOF
-za fcn.00001844 b f04f2de9a8519fe5a8319fe505508fe0033095e714d04de2000053e30040a0e1026041e20800000a0600:ffffffff0000f0ff0000f0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+za fcn.00001844 b f04f2de9a8519fe5a8319fe505508fe0033095e714d04de2000053e30040a0e1026041e20800000a0600:ffffffffff000000ff000000ffffffffffffffffffffffffff000000ffffffffffffffffff000000ffff
 EOF
 RUN
 
@@ -1177,7 +1187,7 @@ z*
 EOF
 EXPECT=<<EOF
 zs *
-za sym.memset b 200c014e0400028b5f8001f1c80300545f4000f102020054013c084ea2001836010000f981801ff8c0035fd61f2003d582001036010000b981c01fb8c0035fd6820000b4010000394200083681e01f78c0035fd60000803dc200303780009f3c620028360004803d80009e3cc0035fd60004803d000001ad80003fadc0035fd61f2003d5211c001203ec7c920000803d5f0004f12028407a80010054820003cb634000d1424001d1600001ad600082ad420001f1a8ffff5480003ead80003fadc0035fd61f2003d5e5003bd585fe2737a50c0012bf100071810200546004803d600001ad63e47a92600002ad600003ad820003cb420004d1630002911f2003d523740bd563000191420001f1a8ffff54600000ad600001ad80003ead80003fadc0035fd61f2003d5bf140071410200546004803d600001ad600002ad600003ad63e07992820003cb420004d16300029123740bd563000291420002f1a8ffff5480003cad80003dad80003ead80003fadc0035fd686008052c720c51ae50001915f0005ebc3f8ff54e60400d16500078b63400091a20003eba500268aa0000054600082ac60003fad420001f1a8ffff54e30305aa820005cb420007eba300005423740bd56300078b420007eba2ffff544200078b638000d1b6ffff17:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+za sym.memset b 200c014e0400028b5f8001f1c80300545f4000f102020054013c084ea2001836010000f981801ff8c0035fd61f2003d582001036010000b981c01fb8c0035fd6820000b4010000394200083681e01f78c0035fd60000803dc200303780009f3c620028360004803d80009e3cc0035fd60004803d000001ad80003fadc0035fd61f2003d5211c001203ec7c920000803d5f0004f12028407a80010054820003cb634000d1424001d1600001ad600082ad420001f1a8ffff5480003ead80003fadc0035fd61f2003d5e5003bd585fe2737a50c0012bf100071810200546004803d600001ad63e47a92600002ad600003ad820003cb420004d1630002911f2003d523740bd563000191420001f1a8ffff54600000ad600001ad80003ead80003fadc0035fd61f2003d5bf140071410200546004803d600001ad600002ad600003ad63e07992820003cb420004d16300029123740bd563000291420002f1a8ffff5480003cad80003dad80003ead80003fadc0035fd686008052c720c51ae50001915f0005ebc3f8ff54e60400d16500078b63400091a20003eba500268aa0000054600082ac60003fad420001f1a8ffff54e30305aa820005cb420007eba300005423740bd56300078b420007eba2ffff544200078b638000d1b6ffff17:ffffffffffffffffffffffffff000000ffffffffff000000ffffffffff000000ffffffffffffffffffffffff00000000ff000000ffffffffffffffffffffffffff000000ffffffffff000000ffffffffffffffffffffffffff000000ffffffffff000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffffffff000000ffffffffffffffffffffffffffffffffffffffffffffffffff000000ffffffffffffffffffffffff00000000ffffffffff000000ffffffffffffffffff000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000ffffffffffffffffffffffffffffffffffffffff00000000ffffffffff000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000ffffffffffffffffffffffffffffffffffffffffff000000ffffffffffffffffffffffffff000000ffffffffffffffffffffffffff000000ffffffffffffffffffffffffff000000ffffffffffffffffff000000
 za sym.memset g cc=28 nbbs=35 edges=47 ebbs=8 bbsum=460
 za sym.memset o 0x00012180
 za sym.memset t void sym.memset (void *s, int c, size_t n)
@@ -1196,7 +1206,7 @@ z*
 EOF
 EXPECT=<<EOF
 zs *
-za sym.strnlen b c1ffffb4ecc300b202ec7c92080c40f2610300542e0400d1cefd44d34310c1a868000ccb69d800b28a000ccb8bd800b20601298a47012b8ace0500f1c80007aa005940fac0feff54c80007aa68fdffb4400000cb660000b4002000d1e70306aa002000d1e70cc0daed10c0da000c4d8b1f0001eb0090819ac0035fd62e0400d1eb0308cb1f2100f1ca0d4092cefd44d3090080924310c1a86bf17dd34a01088b2925cb9ace114a8b630009aa850009aa63d09fda84d0859adaffff17:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000f0ff0000f0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+za sym.strnlen b c1ffffb4ecc300b202ec7c92080c40f2610300542e0400d1cefd44d34310c1a868000ccb69d800b28a000ccb8bd800b20601298a47012b8ace0500f1c80007aa005940fac0feff54c80007aa68fdffb4400000cb660000b4002000d1e70306aa002000d1e70cc0daed10c0da000c4d8b1f0001eb0090819ac0035fd62e0400d1eb0308cb1f2100f1ca0d4092cefd44d3090080924310c1a86bf17dd34a01088b2925cb9ace114a8b630009aa850009aa63d09fda84d0859adaffff17:ff000000ffffffffffffffffffffffffff000000ffffffffffffffffff000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000ffffffffff000000ffffffffff000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000
 za sym.strnlen g cc=7 nbbs=11 edges=14 ebbs=2 bbsum=196
 za sym.strnlen o 0x000131a4
 za sym.strnlen t void sym.strnlen (int64_t arg1, int64_t arg2, int64_t arg5)
@@ -1215,7 +1225,7 @@ zaf
 z* ~za sym._vfprintf_r b
 EOF
 EXPECT=<<EOF
-za sym._vfprintf_r b ff0314d1fd7b00a9fd030091f35301a9f30302aaf55b02a9f76303a9f70300aaf80303aaf96b04a9fa0301aafb7305a9e827066d6a170094000040f9e06700f989efff97e05700f9020180d2e0a3059101008052a4ecff97b70000b4e052:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000fcffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+za sym._vfprintf_r b ff0314d1fd7b00a9fd030091f35301a9f30302aaf55b02a9f76303a9f70300aaf80303aaf96b04a9fa0301aafb7305a9e827066d6a170094000040f9e06700f989efff97e05700f9020180d2e0a3059101008052a4ecff97b70000b4e052:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000ffffffffffffffffff000000ffffffffffffffffffffffffffffffffff000000ff000000ffff
 EOF
 RUN
 
@@ -1730,5 +1740,104 @@ f~?sign.bytes.
 EOF
 EXPECT=<<EOF
 1
+EOF
+RUN
+
+NAME=Mangled zignatures
+FILE=bins/mach0/mangled
+CMDS=<<EOF
+e zign.mangled=true
+aa
+zg
+z*~N
+?e --
+z-*
+e zign.mangled=false
+zg
+z*~N
+EOF
+EXPECT=<<EOF
+za sym.foo_int__int_ N main
+za sym.foo__ N sym.foo_int_
+za main N sym.imp.atoi
+za sym.foo_int_ N sym.foo_int__int_
+--
+za foo__ N foo(int)
+za foo_int__int_ N main
+za foo_int_ N foo(int, int)
+za main N sym.imp.atoi
+EOF
+RUN
+
+NAME=Saves and loads sdb zignatures without sdb extension
+FILE=-
+CMDS=<<EOF
+rm .tmp_file
+za s1 x xref1
+za s2 r ref1
+za s3 n sym1
+za s4 n sym2
+zos .tmp_file
+z-*
+zo .tmp_file
+z~s1
+z~s2
+z~s3
+z~s4
+rm .tmp_file
+EOF
+EXPECT=<<EOF
+s1:
+s2:
+s3:
+s4:
+EOF
+RUN
+
+NAME=Saves and loads r2 zignatures without r2 extension
+FILE=-
+CMDS=<<EOF
+rm .tmp_file2
+za s1 x xref1
+za s2 r ref1
+za s3 n sym1
+za s4 n sym2
+z* > .tmp_file2
+z-*
+zo .tmp_file2
+z~s1
+z~s2
+z~s3
+z~s4
+rm .tmp_file2
+EOF
+EXPECT=<<EOF
+s1:
+s2:
+s3:
+s4:
+EOF
+RUN
+
+NAME=Generate zignature and show only one
+FILE=bins/elf/arg
+CMDS=<<EOF
+aa
+zg
+z $$
+aflc
+EOF
+EXPECT=<<EOF
+entry0:
+  bytes: 31ed4989d15e4889e24883e4f050544c8d053a020000488d0dc3010000488d3d5a010000ff1516092000
+  mask: ffffffffffffffffffffffffffffffff000000000000ff000000000000ff000000000000ff0000000000
+  graph: cc=1 nbbs=1 edges=0 ebbs=1 bbsum=42
+  addr: 0x000006a0
+  next: sym.deregister_tm_clones
+  types: void entry0 (int64_t arg3)
+  refs: sym.__libc_csu_fini, sym.__libc_csu_init, sym.main
+  vars: tr73:arg3:int64_t
+  bbhash: 77ece050bbc234ae3b587a8ef8da536b640f0b000414d63490214c47b18021d2
+18
 EOF
 RUN

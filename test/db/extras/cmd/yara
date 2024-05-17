@@ -1,7 +1,7 @@
-NAME=yara: scan
+NAME=yara scan
 FILE=bins/elf/vim
 CMDS=<<EOF
-yara scan
+yrs
 f
 EOF
 EXPECT=<<EOF
@@ -20,11 +20,11 @@ SHA256_Constants
 EOF
 RUN
 
-NAME=yara: scanS
+NAME=yara: scan with strings
 FILE=malloc://1024
 CMDS=<<EOF
 wx cffbc0b5e9b5dba5a5dbb5e9d728ae2222ae28d7
-yara scanS
+yrs S
 EOF
 EXPECT=<<EOF
 SHA512_Constants
@@ -33,5 +33,17 @@ SHA512_Constants
 0x00000008: yara0_SHA512_Constants_2 : a5dbb5e9
 0x0000000c: yara0_SHA512_Constants_3 : d728ae22
 0x00000010: yara0_SHA512_Constants_4 : 22ae28d7
+EOF
+RUN
+
+NAME=yara: versions
+FILE=malloc://1024
+CMDS=<<EOF
+yrv~yara?
+yara version~yara?
+EOF
+EXPECT=<<EOF
+2
+2
 EOF
 RUN

@@ -1,4 +1,4 @@
-/* radare2 - LGPL - Copyright 2007-2022 pancake */
+/* radare2 - LGPL - Copyright 2007-2024 pancake */
 
 #include <r_hash.h>
 #include <r_util.h>
@@ -333,7 +333,7 @@ R_API ut64 r_hash_name_to_bits(const char *name) {
 }
 
 R_API void r_hash_do_spice(RHash *ctx, ut64 algo, int loops, R_NULLABLE RHashSeed *seed) {
-	r_return_if_fail (ctx);
+	R_RETURN_IF_FAIL (ctx);
 	int i, len, hlen = r_hash_size (algo);
 	size_t buf_len = hlen + (seed? seed->len: 0);
 	ut8 *buf = calloc (1, buf_len);
@@ -360,12 +360,12 @@ R_API void r_hash_do_spice(RHash *ctx, ut64 algo, int loops, R_NULLABLE RHashSee
 }
 
 R_API R_MUSTUSE char *r_hash_tostring(R_NULLABLE RHash *ctx, const char *name, const ut8 *data, int len) {
-	r_return_val_if_fail (name && len >= 0, NULL);
+	R_RETURN_VAL_IF_FAIL (name && len >= 0 && data, NULL);
 	ut64 algo = r_hash_name_to_bits (name);
 	char *digest_hex = NULL;
 	RHash *myctx = NULL;
 	int i, digest_size;
-	if (!algo || !data) {
+	if (!algo) {
 		return NULL;
 	}
 	if (!ctx) {
@@ -374,17 +374,21 @@ R_API R_MUSTUSE char *r_hash_tostring(R_NULLABLE RHash *ctx, const char *name, c
 	r_hash_do_begin (ctx, algo);
 	digest_size = r_hash_calculate (ctx, algo, data, len);
 	r_hash_do_end (ctx, algo);
+	size_t digest_hex_size = 0;
 	if (digest_size == 0) {
-		digest_hex = calloc (16, 1);
-		snprintf (digest_hex, 15, "%02.8f", ctx->entropy);
+		digest_hex_size = 16;
+		digest_hex = calloc (digest_hex_size, 1);
+		snprintf (digest_hex, digest_hex_size, "%02.8f", ctx->entropy);
 	} else if (digest_size > 0) {
 		if (digest_size * 2 < digest_size) {
 			digest_hex = NULL;
 		} else {
-			digest_hex = malloc ((digest_size * 2) + 1);
+			digest_hex_size = (digest_size * 2) + 1;
+			digest_hex = malloc (digest_hex_size);
 			if (digest_hex) {
 				for (i = 0; i < digest_size; i++) {
-					sprintf (digest_hex + (i * 2), "%02x", ctx->digest[i]);
+					size_t id = (i * 2);
+					snprintf (digest_hex + id, digest_hex_size - id, "%02x", ctx->digest[i]);
 				}
 				digest_hex[digest_size * 2] = 0;
 			}

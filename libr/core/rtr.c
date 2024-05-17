@@ -1,4 +1,4 @@
-/* radare - Copyright 2009-2021 - pancake, nibble */
+/* radare - Copyright 2009-2024 - pancake, nibble */
 
 #include "r_core.h"
 #include "r_socket.h"
@@ -232,8 +232,8 @@ static void activateDieTime(RCore *core) {
 	}
 }
 
-#include "rtr_http.c"
-#include "rtr_shell.c"
+#include "rtr_http.inc.c"
+#include "rtr_shell.inc.c"
 
 static int write_reg_val(char *buf, ut64 sz, ut64 reg, int regsize, bool bigendian) {
 	if (!bigendian) {
@@ -389,26 +389,29 @@ static int r_core_rtr_gdb_cb(libgdbr_t *g, void *core_ptr, const char *cmd,
 			case 't':
 				switch (cmd[3]) {
 				case '\0': // dpt
-					if (!core->dbg->h->threads) {
-						return -1;
-					}
-					if (!(list = core->dbg->h->threads(core->dbg, core->dbg->pid))) {
-						return -1;
-					}
-					memset (out_buf, 0, max_len);
-					out_buf[0] = 'm';
-					ret = 1;
-					r_list_foreach (list, iter, dbgpid) {
-						// Max length of a hex pid = 8?
-						if (ret >= max_len - 9) {
-							break;
+					{
+						RDebugPlugin *plugin = R_UNWRAP3 (core->dbg, current, plugin);
+						if (!plugin || !plugin->threads) {
+							return -1;
 						}
-						snprintf (out_buf + ret, max_len - ret - 1, "%x,", dbgpid->pid);
-						ret = strlen (out_buf);
-					}
-					if (ret > 1) {
-						ret--;
-						out_buf[ret] = '\0';
+						if (!(list = plugin->threads (core->dbg, core->dbg->pid))) {
+							return -1;
+						}
+						memset (out_buf, 0, max_len);
+						out_buf[0] = 'm';
+						ret = 1;
+						r_list_foreach (list, iter, dbgpid) {
+							// Max length of a hex pid = 8?
+							if (ret >= max_len - 9) {
+								break;
+							}
+							snprintf (out_buf + ret, max_len - ret - 1, "%x,", dbgpid->pid);
+							ret = strlen (out_buf);
+						}
+						if (ret > 1) {
+							ret--;
+							out_buf[ret] = '\0';
+						}
 					}
 					return 0;
 				case 'r': // dptr -> return current tid as int
@@ -999,7 +1002,7 @@ R_API void r_core_rtr_cmd(RCore *core, const char *input) {
 				r_th_setaffinity (rapthread, cpuaff);
 #endif
 				r_th_setname (rapthread, "rapthread");
-				r_th_start (rapthread, false);
+				r_th_start (rapthread);
 				R_LOG_INFO ("Background rap server started");
 			}
 		}
@@ -1202,7 +1205,7 @@ static void rtr_cmds_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *bu
 		client_context->res = strdup ("\n");
 	}
 
-	if (!client_context->res || (!r_config_get_i (client_context->core->config, "scr.prompt") &&
+	if (!client_context->res || (!r_config_get_b (client_context->core->config, "scr.prompt") &&
 				 !strcmp ((char *)buf, "q!")) ||
 				 !strcmp ((char *)buf, ".--")) {
 		rtr_cmds_client_close ((uv_tcp_t *) client, true);
@@ -1360,9 +1363,7 @@ R_API int r_core_rtr_cmds(RCore *core, const char *port) {
 					buf[i] = buf[i + 1]? ';': '\0';
 				}
 			}
-			if ((!r_config_get_i (core->config, "scr.prompt") &&
-			     !strcmp ((char *)buf, "q!")) ||
-			    !strcmp ((char *)buf, ".--")) {
+			if ((!r_config_get_b (core->config, "scr.prompt") && !strcmp ((char *)buf, "q!")) || !strcmp ((char *)buf, ".--")) {
 				r_socket_close (ch);
 				break;
 			}

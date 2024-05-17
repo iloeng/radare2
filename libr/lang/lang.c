@@ -25,6 +25,7 @@ R_LIB_VERSION (r_lang);
 #include "p/poke.c"
 #include "p/tsc.c"
 #include "p/nim.c"
+#include "p/dart.c"
 
 R_API RLang *r_lang_new(void) {
 	RLang *lang = R_NEW0 (RLang);
@@ -47,24 +48,25 @@ R_API RLang *r_lang_new(void) {
 	lang->cb_printf = (PrintfCallback)printf;
 #if HAVE_SYSTEM
 #if R2__UNIX__
-	r_lang_add (lang, &r_lang_plugin_s);
-	r_lang_add (lang, &r_lang_plugin_c);
-	r_lang_add (lang, &r_lang_plugin_cpipe);
+	r_lang_plugin_add (lang, &r_lang_plugin_s);
+	r_lang_plugin_add (lang, &r_lang_plugin_c);
+	r_lang_plugin_add (lang, &r_lang_plugin_cpipe);
 #endif
-	r_lang_add (lang, &r_lang_plugin_v);
-	r_lang_add (lang, &r_lang_plugin_vala);
-	r_lang_add (lang, &r_lang_plugin_rust);
-	r_lang_add (lang, &r_lang_plugin_zig);
-	r_lang_add (lang, &r_lang_plugin_pipe);
+	r_lang_plugin_add (lang, &r_lang_plugin_v);
+	r_lang_plugin_add (lang, &r_lang_plugin_vala);
+	r_lang_plugin_add (lang, &r_lang_plugin_rust);
+	r_lang_plugin_add (lang, &r_lang_plugin_zig);
+	r_lang_plugin_add (lang, &r_lang_plugin_pipe);
 #endif
-	r_lang_add (lang, &r_lang_plugin_go);
-	r_lang_add (lang, &r_lang_plugin_poke);
-	r_lang_add (lang, &r_lang_plugin_spp);
-	r_lang_add (lang, &r_lang_plugin_lib);
-	r_lang_add (lang, &r_lang_plugin_asm);
-	r_lang_add (lang, &r_lang_plugin_qjs);
-	r_lang_add (lang, &r_lang_plugin_tsc);
-	r_lang_add (lang, &r_lang_plugin_nim);
+	r_lang_plugin_add (lang, &r_lang_plugin_go);
+	r_lang_plugin_add (lang, &r_lang_plugin_poke);
+	r_lang_plugin_add (lang, &r_lang_plugin_spp);
+	r_lang_plugin_add (lang, &r_lang_plugin_lib);
+	r_lang_plugin_add (lang, &r_lang_plugin_asm);
+	r_lang_plugin_add (lang, &r_lang_plugin_qjs);
+	r_lang_plugin_add (lang, &r_lang_plugin_tsc);
+	r_lang_plugin_add (lang, &r_lang_plugin_nim);
+	r_lang_plugin_add (lang, &r_lang_plugin_dart);
 
 	return lang;
 }
@@ -136,31 +138,38 @@ R_API bool r_lang_setup(RLang *lang) {
 	if (p) {
 		if (p->setup) {
 			return p->setup (lang->session);
-		} else {
-			if (p->fini) {
-				p->fini (lang->session);
-			}
-			if (p->init) {
-				p->init (lang->session);
-			}
+		}
+		if (p->fini) {
+			p->fini (lang->session);
+		}
+		if (p->init) {
+			(void)p->init (lang->session);
+		}
+		return true;
+	}
+	return false;
+}
+
+R_API bool r_lang_plugin_add(RLang *lang, RLangPlugin *foo) {
+	if (foo && !r_lang_get_by_name (lang, foo->meta.name)) {
+		bool supported = true;
+		if (foo->init) {
+			// when init takes null, we just check if
+			// the system is capable to use the plugin
+			// otherwise we can use the session info
+			// to initialize the internal plugin state
+			supported = foo->init (NULL);
+		}
+		if (supported) {
+			r_list_append (lang->langs, foo);
 			return true;
 		}
 	}
 	return false;
 }
 
-R_API bool r_lang_add(RLang *lang, RLangPlugin *foo) {
-	if (foo && (!r_lang_get_by_name (lang, foo->name))) {
-#if 0
-		// we want an init when adding the plugin
-		if (foo->init) {
-			foo->init (lang);
-		}
-#endif
-		r_list_append (lang->langs, foo);
-		return true;
-	}
-	return false;
+R_API bool r_lang_plugin_remove(RLang *lang, RLangPlugin *plugin) {
+	return true;
 }
 
 /* TODO: deprecate all list methods */
@@ -183,24 +192,24 @@ R_API void r_lang_list(RLang *lang, int mode) {
 		r_table_add_column (table, typeString, "desc", 0);
 	}
 	r_list_foreach (lang->langs, iter, h) {
-		const char *license = h->license
-			? h->license : "???";
+		const char *license = h->meta.license
+			? h->meta.license : "???";
 		if (mode == 'j') {
 			pj_o (pj);
-			pj_ks (pj, "name", r_str_get (h->name));
-			pj_ks (pj, "license", r_str_get (h->license));
-			pj_ks (pj, "description", r_str_get (h->desc));
+			pj_ks (pj, "name", r_str_get (h->meta.name));
+			pj_ks (pj, "license", license);
+			pj_ks (pj, "description", r_str_get (h->meta.desc));
 			pj_end (pj);
 		} else if (mode == 'q') {
-			lang->cb_printf ("%s\n", h->name);
+			lang->cb_printf ("%s\n", h->meta.name);
 		} else if (mode == ',') {
 			r_table_add_row (table,
-				r_str_get (h->name),
-				r_str_get (h->license),
-				r_str_get (h->desc), 0);
+				r_str_get (h->meta.name),
+				r_str_get (h->meta.license),
+				r_str_get (h->meta.desc), 0);
 		} else {
-			lang->cb_printf ("%s: (%s) %s\n",
-				h->name, license, h->desc);
+			lang->cb_printf ("%-8s %6s  %s\n",
+				h->meta.name, license, h->meta.desc);
 		}
 	}
 	if (pj) {
@@ -235,7 +244,7 @@ R_API RLangPlugin *r_lang_get_by_name(RLang *lang, const char *name) {
 	RListIter *iter;
 	RLangPlugin *h;
 	r_list_foreach (lang->langs, iter, h) {
-		if (!r_str_casecmp (h->name, name)) {
+		if (!r_str_casecmp (h->meta.name, name)) {
 			return h;
 		}
 		if (h->alias && !r_str_casecmp (h->alias, name)) {
@@ -252,7 +261,12 @@ R_API RLangSession *r_lang_session(RLang *lang, RLangPlugin *h) {
 		session->lang = lang;
 		session->plugin = h;
 		if (h->init) {
-			session->plugin_data = h->init (session);
+			// session->plugin_data = h->init (session);
+			if (!h->init (session)) {
+				R_LOG_ERROR ("Cannot initialize plugin for this rlang session");
+				free (session);
+				return NULL;
+			}
 		}
 	}
 	return session;
@@ -277,7 +291,7 @@ R_API bool r_lang_unuse(RLang *lang) {
 R_API bool r_lang_use_plugin(RLang *lang, RLangPlugin *h) {
 	r_return_val_if_fail (lang && h, false);
 	RListIter *iter;
-	RLangSession *s;
+	RLangSession *s = NULL;
 	r_list_foreach (lang->sessions, iter, s) {
 		if (h == s->plugin) {
 			lang->session = s;
@@ -374,7 +388,7 @@ R_API bool r_lang_prompt(RLang *lang) {
 	/* foo */
 	for (;;) {
 		r_cons_flush ();
-		snprintf (buf, sizeof (buf)-1, "%s> ", plugin->name);
+		snprintf (buf, sizeof (buf)-1, "%s> ", plugin->meta.name);
 		r_line_set_prompt (buf);
 #if 0
 		printf ("%s> ", lang->cur->name);
@@ -424,7 +438,7 @@ R_API bool r_lang_prompt(RLang *lang) {
 					"  !command - run system command\n"
 					"  . file   - interpret file\n"
 					"  q	- quit prompt\n");
-			eprintf ("%s example:\n", plugin->name);
+			eprintf ("%s example:\n", plugin->meta.name);
 			if (plugin->help) {
 				eprintf ("%s", *plugin->help);
 			}

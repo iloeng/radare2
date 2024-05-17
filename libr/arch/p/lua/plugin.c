@@ -1,4 +1,4 @@
-/* radare2 - BSD - Copyright 2017-2022 - pancake */
+/* radare2 - BSD - Copyright 2017-2024 - pancake */
 
 #include <r_arch.h>
 #include <r_lib.h>
@@ -8,11 +8,13 @@
 #include "lua53_parser.c"
 
 static bool encode(RArchSession *as, RAnalOp *op, RArchEncodeMask mask) {
+	PluginData *pd = as->data;
+
 	int parsed = 0;
 	ut32 instruction;
-	current_write_prt = &instruction;
-	current_write_index = 0;
-	doParse0 (parsed, parseNextInstruction, op->mnemonic);
+	pd->current_write_prt = &instruction;
+	pd->current_write_index = 0;
+	doParse0 (pd, parsed, parseNextInstruction, op->mnemonic);
 
 	free (op->bytes);
 	op->size = 4;
@@ -42,7 +44,8 @@ static bool decode(RArchSession *as, RAnalOp *op, RArchDecodeMask mask) {
 		return op->size;
 	}
 	if (mask & R_ARCH_OP_MASK_DISASM) {
-		(void)lua53dissasm (op, data, len);
+		PluginData *pd = as->data;
+		(void)lua53dissasm (pd, op, data, len);
 	}
 	op->mnemonic = strdup (instruction_names[GET_OPCODE (instruction)]);
 	switch (GET_OPCODE (instruction)) {
@@ -230,6 +233,9 @@ static int finit(void *user) {
 
 #endif
 static int archinfo(RArchSession *cfg, ut32 q) {
+	if (q == R_ARCH_INFO_ISVM) {
+		return R_ARCH_INFO_ISVM;
+	}
 	return 4;
 }
 
@@ -251,18 +257,39 @@ static char *regs(RArchSession *s) {
 	return strdup (p);
 }
 
-RArchPlugin r_arch_plugin_lua = {
-	.name = "lua",
-	.desc = "LUA Bytecode arch plugin",
-	.license = "MIT",
-	.author = "pancake",
+static bool init(RArchSession *as) {
+	r_return_val_if_fail (as, false);
+	if (as->data) {
+		R_LOG_WARN ("Already initialized");
+		return false;
+	}
+
+	as->data = R_NEW0 (PluginData);
+	return !!as->data;
+}
+
+static bool fini(RArchSession *as) {
+	r_return_val_if_fail (as, false);
+	R_FREE (as->data);
+	return true;
+}
+
+const RArchPlugin r_arch_plugin_lua = {
+	.meta = {
+		.name = "lua",
+		.desc = "LUA Bytecode arch plugin",
+		.license = "MIT",
+		.author = "pancake",
+	},
 	.arch = "lua",
 	.bits = R_SYS_BITS_PACK (32),
 	.addr_bits = R_SYS_BITS_PACK (32),
 	.info = archinfo,
-	.encode = &encode,
-	.decode = &decode,
+	.encode = encode,
+	.decode = decode,
 	.regs = regs,
+	.init = init,
+	.fini = fini,
 	.cpus = "5.3", // ,5.4"
 	.endian = R_SYS_ENDIAN_LITTLE,
 };

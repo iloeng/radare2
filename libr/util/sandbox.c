@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2012-2022 - pancake */
+/* radare - LGPL - Copyright 2012-2023 - pancake */
 
 #include <r_util.h>
 #include <signal.h>
@@ -255,6 +255,7 @@ R_API int r_sandbox_system(const char *x, int n) {
 			return waitpid (child, NULL, 0);
 		}
 #else
+		// the most common execution path
 		return system (x);
 #endif
 	}
@@ -268,6 +269,7 @@ R_API int r_sandbox_system(const char *x, int n) {
 		if (isbg) {
 			*isbg = 0;
 		}
+			eprintf ("je\n");
 		argv = r_str_argv (cmd, &argc);
 		if (argv) {
 			char *argv0 = r_file_path (argv[0]);
@@ -461,19 +463,14 @@ R_API FILE *r_sandbox_fopen(const char *path, const char *mode) {
 	if ((strchr (mode, 'w') || strchr (mode, 'a') || r_file_is_regular (epath))) {
 #if R2__WINDOWS__
 		wchar_t *wepath = r_utf8_to_utf16 (epath);
-		if (!wepath) {
-			free (epath);
-			return ret;
-		}
-		wchar_t *wmode = r_utf8_to_utf16 (mode);
-		if (!wmode) {
+		if (wepath) {
+			wchar_t *wmode = r_utf8_to_utf16 (mode);
+			if (wmode) {
+				ret = _wfopen (wepath, wmode);
+				free (wmode);
+			}
 			free (wepath);
-			free (epath);
-			return ret;
 		}
-		ret = _wfopen (wepath, wmode);
-		free (wmode);
-		free (wepath);
 #else // R2__WINDOWS__
 		ret = fopen (epath, mode);
 #endif // R2__WINDOWS__

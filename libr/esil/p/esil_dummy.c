@@ -1,4 +1,4 @@
-/* radare2 - LGPL - Copyright 2021-2022 - pancake */
+/* radare2 - LGPL - Copyright 2021-2023 - pancake */
 
 #define R_LOG_ORIGIN "esil.dummy"
 
@@ -27,7 +27,7 @@ static void *r_esil_dummy_init(REsil *esil) {
 		esil_dummy_interrupt_handler, NULL);
 	r_esil_set_syscall (esil, 1337,
 		esil_dummy_syscall_handler, NULL);
-	R_LOG_INFO ("Activated");
+	R_LOG_INFO ("esil.dummy: Activated");
 	return NULL;
 }
 
@@ -42,13 +42,16 @@ static void r_esil_dummy_fini(REsil *esil, void *user) {
 	if (r_esil_get_syscall (esil, 1337) == esil_dummy_syscall_handler) {
 		r_esil_del_syscall (esil, 1337);
 	}
-	R_LOG_INFO ("Deactivated");
+	R_LOG_INFO ("esil.dummy: Deactivated");
 }
 
 REsilPlugin r_esil_plugin_dummy = {
-	.name = "dummy",
-	.desc = "dummy esil plugin",
-	.license = "LGPL3",
+	.meta = {
+		.name = "dummy",
+		.desc = "dummy esil plugin",
+		.author = "pancake",
+		.license = "LGPL3",
+	},
 	.init = r_esil_dummy_init,
 	.fini = r_esil_dummy_fini
 };

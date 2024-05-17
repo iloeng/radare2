@@ -7,8 +7,6 @@
 #include <r_util/r_hex.h>
 #include <r_util/r_assert.h>
 
-#define R_REG_USE_VEC 1
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -20,15 +18,16 @@ R_LIB_VERSION_HEADER (r_reg);
  * this enum aims to cover them all.
  */
 typedef enum {
-	R_REG_TYPE_GPR,
-	R_REG_TYPE_DRX,
-	R_REG_TYPE_FPU,
+	R_REG_TYPE_GPR = 0, // general purpose registers
+	R_REG_TYPE_DRX, // debug register state
+	R_REG_TYPE_FPU, // floating point unit
 	R_REG_TYPE_VEC64, // MMX
 	R_REG_TYPE_VEC128, // XMM
 	R_REG_TYPE_VEC256, // YMM
 	R_REG_TYPE_VEC512, // ZMM
-	R_REG_TYPE_FLG,
-	R_REG_TYPE_SEG,
+	R_REG_TYPE_FLG, // cpu flags
+	R_REG_TYPE_SEG, // segment registers
+	R_REG_TYPE_PRI, // privileged registers
 	R_REG_TYPE_LAST,
 	R_REG_TYPE_ALL = -1, // TODO; rename to ANY
 } RRegisterType;
@@ -40,6 +39,8 @@ typedef enum {
 typedef enum {
 	R_REG_NAME_PC, // program counter
 	R_REG_NAME_SP, // stack pointer
+	R_REG_NAME_GP, // global pointer
+	R_REG_NAME_RA, // return address register
 	R_REG_NAME_SR, // status register
 	R_REG_NAME_BP, // base pointer
 	R_REG_NAME_LR, // link register
@@ -69,6 +70,8 @@ typedef enum {
 	R_REG_NAME_SF,
 	R_REG_NAME_CF,
 	R_REG_NAME_OF,
+	/* thread register */
+	R_REG_NAME_TR,
 	/* syscall number (orig_eax,rax,r0,x0) */
 	R_REG_NAME_SN,
 	R_REG_NAME_LAST,
@@ -98,14 +101,15 @@ typedef enum {
 typedef struct r_reg_item_t {
 	char *name;
 	int /*RRegisterType*/ type;
-	int size;	/* 8,16,32,64 ... 128/256 ??? rename to bitsize */
-	int offset;      /* offset in data structure */
+	int size; /* 8,16,32,64 ... 128/256 ??? rename to bitsize */
+	int offset; /* offset in data structure */
 	int packed_size; /* 0 means no packed register, 1byte pack, 2b pack... */
 	bool is_float;
 	char *flags;
 	char *comment;
 	int index;
 	int arena; /* in which arena is this reg living */
+	bool ro;
 	R_REF_TYPE;
 } RRegItem;
 
@@ -132,7 +136,7 @@ typedef struct r_reg_t {
 	char *name[R_REG_NAME_LAST]; // aliases
 	RRegSet regset[R_REG_TYPE_LAST];
 	RList *allregs;
-	RList *roregs;
+	char *roregs;
 	int iters;
 	int size;
 	int bits_default;
@@ -165,7 +169,7 @@ R_API bool r_reg_set_profile_string(RReg *reg, const char *profile);
 R_API char* r_reg_profile_to_cc(RReg *reg);
 R_API bool r_reg_set_profile(RReg *reg, const char *profile);
 R_API char *r_reg_parse_gdb_profile(const char *profile);
-R_API bool r_reg_is_readonly(RReg *reg, RRegItem *item);
+R_API bool r_reg_ro_reset(RReg *reg, const char *arg);
 
 R_API RRegSet *r_reg_regset_get(RReg *r, int type);
 R_API RRegSet *r_reg_regset_clone(RRegSet *r);

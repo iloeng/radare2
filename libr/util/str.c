@@ -1,6 +1,7 @@
-/* radare - LGPL - Copyright 2007-2023 - pancake */
+/* radare - LGPL - Copyright 2007-2024 - pancake */
 
 #include <r_bin.h>
+#include <r_userconf.h>
 
 /* stable code */
 static const char * const rwxstr[] = {
@@ -37,7 +38,7 @@ R_API int r_str_casecmp(const char *s1, const char *s2) {
 	if (!s1) {
 		return -1;
 	}
-	if (s1 && !s2) {
+	if (R_UNLIKELY (!s2)) {
 		return 1;
 	}
 #ifdef _MSC_VER
@@ -116,7 +117,7 @@ R_API void r_str_reverse(char *str) {
 R_API int r_str_bits(char *strout, const ut8 *buf, int len, const char *bitz) {
 	int i, j, idx;
 	if (bitz) {
-		for (i = j = 0; i < len && (!bitz||bitz[i]); i++) {
+		for (i = j = 0; i < len && (!bitz || bitz[i]); i++) {
 			if (i > 0 && (i % 8) == 0) {
 				buf++;
 			}
@@ -183,12 +184,13 @@ R_API int r_str_bits64(char* strout, ut64 in) {
  *
  */
 R_API ut64 r_str_bits_from_string(const char *buf, const char *bitz) {
+	R_RETURN_VAL_IF_FAIL (buf && bitz, UT64_MAX);
 	ut64 out = 0LL;
 	/* return the numeric value associated to a string (rflags) */
 	for (; *buf; buf++) {
-		char *ch = strchr (bitz, toupper ((const unsigned char)*buf));
+		char *ch = strchr (bitz, toupper ((int)(ut8)*buf));
 		if (!ch) {
-			ch = strchr (bitz, tolower ((const unsigned char)*buf));
+			ch = strchr (bitz, tolower ((int)(ut8)*buf));
 		}
 		if (ch) {
 			int bit = (int)(size_t)(ch - bitz);
@@ -200,43 +202,19 @@ R_API ut64 r_str_bits_from_string(const char *buf, const char *bitz) {
 	return out;
 }
 
-R_API int r_str_binstr2bin(const char *str, ut8 *out, int outlen) {
-	int n, i, j, k, ret, len;
-	len = strlen (str);
-	for (n = i = 0; i < len; i += 8) {
-		ret = 0;
-		while (str[i] == ' ') {
-			str++;
-		}
-		if (i + 7 < len) {
-			for (k = 0, j = i + 7; j >= i; j--, k++) {
-				if (str[j] == ' ') {
-					continue;
-				}
-				if (str[j] == '1') {
-					ret |= (1 << k);
-				} else if (str[j] != '0') {
-					return n;
-				}
-			}
-		}
-		out[n++] = ret;
-		if (n == outlen) {
-			return n;
-		}
-	}
-	return n;
-}
-
 // Returns the permissions as in integer given an input in the form of rwx, rx,
 // etc.
 R_API int r_str_rwx(const char *str) {
+	R_RETURN_VAL_IF_FAIL (str, -1);
 	int ret = atoi (str);
 	if (!ret) {
-		ret |= strchr (str, 'm') ? 16 : 0;
-		ret |= strchr (str, 'r') ? 4 : 0;
-		ret |= strchr (str, 'w') ? 2 : 0;
+		ret |= strchr (str, 'm')? 16: 0;
+		ret |= strchr (str, 'r')? 4: 0;
+		ret |= strchr (str, 'w')? 2: 0;
 		ret |= strchr (str, 'x') ? 1 : 0;
+		if (*str && ret == 0 && strchr (str, '-')) {
+			ret = -1;
+		}
 	} else if (ret < 0 || ret >= R_ARRAY_SIZE (rwxstr)) {
 		ret = 0;
 	}
@@ -264,34 +242,6 @@ R_API void r_str_case(char *str, bool up) {
 			*str = tolower ((int)(ut8)*str);
 		}
 	}
-}
-
-R_API R_MUSTUSE char *r_file_home(const char *str) {
-	char *dst, *home = r_sys_getenv (R_SYS_HOME);
-	size_t length;
-	if (!home) {
-		home = r_file_tmpdir ();
-		if (!home) {
-			return NULL;
-		}
-	}
-	length = strlen (home) + 1;
-	if (R_STR_ISNOTEMPTY (str)) {
-		length += strlen (R_SYS_DIR) + strlen (str);
-	}
-	dst = (char *)calloc (1, length);
-	if (!dst) {
-		goto fail;
-	}
-	int home_len = strlen (home);
-	memcpy (dst, home, home_len + 1);
-	if (R_STR_ISNOTEMPTY (str)) {
-		dst[home_len] = R_SYS_DIR[0];
-		strcpy (dst + home_len + 1, str);
-	}
-fail:
-	free (home);
-	return dst;
 }
 
 R_API R_MUSTUSE char *r_str_r2_prefix(const char *str) {
@@ -328,7 +278,7 @@ R_API int r_str_delta(char *p, char a, char b) {
 R_API int r_str_split(char *str, char ch) {
 	int i;
 	char *p;
-	if (!str || !*str) {
+	if (R_STR_ISEMPTY (str)) {
 		return 0;
 	}
 	/* TODO: sync with r1 code */
@@ -352,7 +302,7 @@ R_API int r_str_word_set0(char *str) {
 		return 0;
 	}
 	for (i = 0; str[i] && str[i + 1]; i++) {
-		if (i > 0 && str[i-1] == ' ' && str[i] == ' ') {
+		if (i > 0 && str[i - 1] == ' ' && str[i] == ' ') {
 			int len = strlen (str + i);
 			memmove (str + i, str + i + 1, len);
 			i--;
@@ -534,7 +484,7 @@ R_API const char *r_str_word_get0(const char *str, int idx) {
 
 // Return the number of times that the character ch appears in the string.
 R_API size_t r_str_char_count(const char *string, char ch) {
-	r_return_val_if_fail (string, 0);
+	R_RETURN_VAL_IF_FAIL (string, 0);
 	size_t i, count = 0;
 	for (i = 0; string[i]; i++) {
 		if (string[i] == ch) {
@@ -604,6 +554,20 @@ R_API const char *r_sub_str_rchr(const char *str, int start, int end, char chr) 
 		start++;
 	}
 	return str[start] == chr ? str + start : NULL;
+}
+
+R_API const char *r_str_nchr(const char *str, char chr, int maxlen) {
+	int count = 0;
+	while (*str) {
+		if (maxlen > 0 && count++ >= maxlen) {
+			return NULL;
+		}
+		if (*str == chr) {
+			return str;
+		}
+		str++;
+	}
+	return *str? str: NULL;
 }
 
 R_API const char *r_str_sep(const char *base, const char *sep) {
@@ -733,8 +697,9 @@ R_API char *r_str_newf(const char *fmt, ...) {
 
 	va_start (ap, fmt);
 	if (!strchr (fmt, '%')) {
+		char *p = strdup (fmt);
 		va_end (ap);
-		return strdup (fmt);
+		return p;
 	}
 	va_copy (ap2, ap);
 	int ret = vsnprintf (NULL, 0, fmt, ap2);
@@ -748,6 +713,7 @@ R_API char *r_str_newf(const char *fmt, ...) {
 	return p;
 }
 
+#if 0
 // Secure string copy with null terminator (like strlcpy or strscpy but ours
 R_API size_t r_str_ncpy(char *dst, const char *src, size_t n) {
 	size_t i;
@@ -764,6 +730,7 @@ R_API size_t r_str_ncpy(char *dst, const char *src, size_t n) {
 	dst[i] = 0;
 	return i;
 }
+#endif
 
 /* memccmp ("foo.bar", "foo.cow, '.') == 0 */
 // Returns 1 if src and dst are equal up until the first instance of ch in src.
@@ -796,33 +763,6 @@ R_API bool r_str_cmp_list(const char *list, const char *item, char sep) {
 		}
 	}
 	return true;
-}
-
-// like strncmp, but checking for null pointers
-R_API int r_str_cmp(const char *a, const char *b, int len) {
-	if ((a == b) || (!a && !b)) {
-		return 0;
-	}
-	if (!a && b) {
-		return -1;
-	}
-	if (a && !b) {
-		return 1;
-	}
-	if (len < 0) {
-		return strcmp (a, b);
-	}
-	return strncmp (a, b, len);
-}
-
-// Copies all characters from src to dst up until the character 'ch'.
-R_API int r_str_ccpy(char *dst, char *src, int ch) {
-	int i;
-	for (i = 0; src[i] && src[i] != ch; i++) {
-		dst[i] = src[i];
-	}
-	dst[i] = '\0';
-	return i;
 }
 
 R_API char *r_str_word_get_first(const char *text) {
@@ -942,6 +882,7 @@ R_API char *r_str_appendch(char *x, char y) {
 }
 
 R_API R_MUSTUSE char* r_str_replace_all(char *str, const char *key, const char *val) {
+	r_return_val_if_fail (str && key, NULL);
 	if (strstr (val, key)) {
 		// XXX value cant contain the key otherwise we go into infinite loop
 		R_LOG_ERROR ("RStr.replaceAll() value can't contain key");
@@ -1013,26 +954,24 @@ R_API R_MUSTUSE char* r_str_replace(char *str, const char *key, const char *val,
 
 R_API R_MUSTUSE char *r_str_replace_icase(char *str, const char *key, const char *val, int g, int keep_case) {
 	r_return_val_if_fail (str && key && val, NULL);
-
-	int off, i, klen, vlen, slen;
 	char *newstr, *p = str;
-	klen = strlen (key);
-	vlen = strlen (val);
-
-	slen = strlen (str);
+	size_t off, i;
+	size_t klen = strlen (key);
+	size_t vlen = strlen (val);
+	size_t slen = strlen (str);
 	for (i = 0; i < slen;) {
 		p = (char *)r_str_casestr (str + i, key);
 		if (!p) {
 			break;
 		}
-		off = (int)(size_t) (p - str);
+		off = (size_t) (p - str);
 		if (vlen != klen) {
 			int tlen = slen - (off + klen);
 			slen += vlen - klen;
 			if (vlen > klen) {
 				newstr = realloc (str, slen + 1);
 				if (!newstr) {
-					goto alloc_fail;
+					return NULL;
 				}
 				str = newstr;
 			}
@@ -1046,12 +985,12 @@ R_API R_MUSTUSE char *r_str_replace_icase(char *str, const char *key, const char
 			if (!tmp_val || !str_case) {
 				free (tmp_val);
 				free (str_case);
-				goto alloc_fail;
+				return NULL;
 			}
 			tmp_val = r_str_replace_icase (tmp_val, key, str_case, 0, 0);
 			free (str_case);
 			if (!tmp_val) {
-				goto alloc_fail;
+				return NULL;
 			}
 			memcpy (p, tmp_val, vlen);
 			free (tmp_val);
@@ -1065,9 +1004,6 @@ R_API R_MUSTUSE char *r_str_replace_icase(char *str, const char *key, const char
 		}
 	}
 	return str;
-alloc_fail:
-	free (str);
-	return NULL;
 }
 
 /* replace the key in str with val.
@@ -1139,7 +1075,10 @@ R_API void r_str_replace_in(char *str, ut32 sz, const char *key, const char *val
 	r_return_if_fail (str && key && val);
 	char *heaped = r_str_replace (strdup (str), key, val, g);
 	if (heaped) {
-		strncpy (str, heaped, sz);
+		if (sz < 0) {
+			sz = strlen (key);
+		}
+		r_str_ncpy (str, heaped, sz);
 		free (heaped);
 	}
 }
@@ -1284,6 +1223,7 @@ R_API char *r_str_sanitize_sdb_key(const char *s) {
 }
 
 R_API void r_str_byte_escape(const char *p, char **dst, int dot_nl, bool default_dot, bool esc_bslash) {
+	r_return_if_fail (p && dst);
 	char *q = *dst;
 	switch (*p) {
 	case '\n':
@@ -1847,10 +1787,19 @@ R_API char *r_str_escape_utf8_for_json(const char *buf, int buf_size) {
 		} else { // ch_bytes == 0
 			// Outside JSON spec, but apparently no better
 			// alternative if need to reconstruct the original string
+#if 1
+			*q++ = '\\';
+			*q++ = 'u';
+			*q++ = '0';
+			*q++ = '0';
+			*q++ = "0123456789abcdef"[*p >> 4 & 0xf];
+			*q++ = "0123456789abcdef"[*p & 0xf];
+#else
 			*q++ = '\\';
 			*q++ = 'x';
 			*q++ = "0123456789abcdef"[*p >> 4 & 0xf];
 			*q++ = "0123456789abcdef"[*p & 0xf];
+#endif
 			ch_bytes = 1;
 		}
 		p += ch_bytes;
@@ -1859,7 +1808,7 @@ R_API char *r_str_escape_utf8_for_json(const char *buf, int buf_size) {
 	return new_buf;
 }
 
-// http://daviddeley.com/autohotkey/parameters/parameters.htm#WINCRULES
+// https://daviddeley.com/autohotkey/parameters/parameters.htm#WINCRULES
 // https://docs.microsoft.com/en-us/cpp/cpp/main-function-command-line-args?redirectedfrom=MSDN&view=vs-2019#parsing-c-command-line-arguments
 R_API char *r_str_format_msvc_argv(size_t argc, const char **argv) {
 	RStrBuf sb;
@@ -1962,14 +1911,29 @@ R_API size_t r_str_ansi_nlen(const char *str, size_t slen) {
 	return len; // len > 0 ? len: 1;
 }
 
+static size_t __str_ansi_sanitize_length(char const *str) {
+	const signed char str0 = (const signed char)str[0];
+	const signed char str1 = (const signed char)str[1];
+	size_t i = 0;
+	if (str0 == 0x1b || str0 == 0x07 || str0 == 0x05 || str0 == 0x7f) { // ESC, BEL, ENQ, DEL
+		i++;
+	} else if (str0 == -0x3e && str1 >= -0x80 && str1 <= -0x61) { // C1 control codes U+0080 - U+009F
+		i += 2;
+	}
+	return i;
+}
+
 // remove ansi escape codes from string, decolorizing it
 // TODO : optimize by just using two counter variables instead of strcpy()
 R_API size_t r_str_ansi_strip(char *str) {
 	size_t i = 0;
 	while (str[i]) {
 		size_t chlen = __str_ansi_length (str + i);
+		size_t sanitize_len = __str_ansi_sanitize_length (str + i);
 		if (chlen > 1) {
 			r_str_cpy (str + i, str + i + chlen);
+		} else if (sanitize_len > 0) {
+			r_str_cpy (str + i, str + i + sanitize_len);
 		} else {
 			i++;
 		}
@@ -1977,16 +1941,18 @@ R_API size_t r_str_ansi_strip(char *str) {
 	return i;
 }
 
+#if 0
+// unused
 // insert a string into another string, supports ansi control chars
 R_API char *r_str_insert(R_OWN char *src, int pos, const char *str) {
-	char *a = r_str_ndup (src, pos);
+	r_str_var (a, pos, src);
 	char *b = strdup (src + pos + r_str_ansi_len (str));
 	char *r = r_str_newf ("%s%s%s", a, str, b);
-	free (a);
 	free (b);
 	free (src);
 	return r;
 }
+#endif
 
 R_API size_t r_str_ansi_len(const char *str) {
 	r_return_val_if_fail (str, 0);
@@ -1994,13 +1960,12 @@ R_API size_t r_str_ansi_len(const char *str) {
 }
 
 R_API size_t r_str_nlen(const char *str, int n) {
+	r_return_val_if_fail (str && n >= 0, 0);
 	size_t len = 0;
-	if (str) {
-		while (n > 0 && *str) {
-			len++;
-			str++;
-			n--;
-		}
+	while (n > 0 && *str) {
+		len++;
+		str++;
+		n--;
 	}
 	return len;
 }
@@ -2858,6 +2823,7 @@ R_API size_t r_str_len_utf8_ansi(const char *str) {
 
 // XXX must find across the ansi tags, as well as support utf8
 R_API const char *r_strstr_ansi(const char *a, const char *b) {
+	// XXX not working well if "\x1b[32mF\x1b[32mOO" -> FOO not found
 	const char *ch, *p = a;
 	do {
 		ch = strchr (p, '\x1b');
@@ -3325,15 +3291,15 @@ R_API char *r_str_crop(const char *str, unsigned int x, unsigned int y,
 
 // TODO: improve loop to wrap by words
 R_API char *r_str_wrap(const char *str, int w) {
-	char *r, *ret;
 	if (w < 1 || !str) {
 		return strdup ("");
 	}
 	size_t r_size = 8 * strlen (str);
-	r = ret = malloc (r_size);
+	char *r = malloc (r_size);
 	if (!r) {
 		return NULL;
 	}
+	char *ret = r;
 	char *end = r + r_size;
 	int cw = 0;
 	while (*str && r + 1 < end) {
@@ -3364,26 +3330,6 @@ R_API char *r_str_wrap(const char *str, int w) {
 	}
 	*r = 0;
 	return ret;
-}
-
-R_API const char *r_str_tok(const char *str1, const char b, size_t len) {
-	const char *p = str1;
-	size_t i = 0;
-	if (!p || !*p) {
-		return p;
-	}
-	if (len == -1) {
-		len = strlen (str1);
-	}
-	for ( ; i < len; i++,p++) {
-		if (*p == b) {
-			break;
-		}
-	}
-	if (i == len) {
-		p = NULL;
-	}
-	return p;
 }
 
 R_API int r_str_do_until_token(str_operation op, char *str, const char tok) {
@@ -3459,6 +3405,37 @@ R_API bool r_str_endswith(const char *str, const char *needle) {
 	return !strcmp (str + (slen - nlen), needle);
 }
 
+R_API char *r_str_slice(const char *str, RStringSlice s) {
+	size_t len = s.to - s.from;
+	return r_str_ndup (str + s.from, len);
+}
+
+R_API RVecStringSlice *r_str_split_vec(const char *str, const char *c, int n) {
+	r_return_val_if_fail (str && c, NULL);
+	size_t b = 0;
+	// TODO honor 'c' and 'n'. not just split by ' '
+	RVecStringSlice *vs = RVecStringSlice_new ();
+	while (str[b]) {
+		const char ch = str[b];
+		if (isspace (ch)) {
+			b++;
+			continue;
+		}
+		RStringSlice slice = { b, 0 };
+		b++;
+		while (str[b]) {
+			const char ch = str[b];
+			if (isspace (ch)) {
+				break;
+			}
+			b++;
+		}
+		slice.to = b;
+		RVecStringSlice_push_back (vs, &slice);
+	}
+	return vs;
+}
+
 // Splits the string <str> by string <c> and returns the result in a list.
 // XXX should take const char * as argument!!
 R_API RList *r_str_split_list(char *str, const char *c, int n)  {
@@ -3466,7 +3443,8 @@ R_API RList *r_str_split_list(char *str, const char *c, int n)  {
 	RList *lst = r_list_newf (NULL);
 	char *aux = str; // XXX should be an strdup
 	int i = 0;
-	char  *e = aux;
+	char *e = aux;
+	const size_t clen = strlen (c);
 	for (;e;) {
 		e = strstr (aux, c);
 		if (n > 0) {
@@ -3476,8 +3454,10 @@ R_API RList *r_str_split_list(char *str, const char *c, int n)  {
 			}
 		}
 		if (e) {
-			*e++ =  0;
+			*e = 0;
+			e += clen;
 		}
+		// TODO: make string trim optional
 		r_str_trim (aux);
 		r_list_append (lst, aux);
 		aux = e;
@@ -3543,8 +3523,8 @@ R_API bool r_str_isnumber(const char *str) {
 	if (!str || (!IS_DIGIT (*str) && *str != '-')) {
 		return false;
 	}
-
 	for (str++; *str; str++) {
+		// consider '.' part of the number?
 		if (!IS_DIGIT (*str)) {
 			return false;
 		}
@@ -3824,17 +3804,15 @@ R_API int r_snprintf(char *string, int len, const char *fmt, ...) {
 
 // Strips all the lines in str that contain key
 R_API void r_str_stripLine(char *str, const char *key) {
-	size_t i, j, klen, slen, off;
-	const char *ptr;
-
 	if (!str || !key) {
 		return;
 	}
-	klen = strlen (key);
-	slen = strlen (str);
+	size_t i, j;
+	size_t klen = strlen (key);
+	size_t slen = strlen (str);
 
 	for (i = 0; i < slen; ) {
-		ptr = (char*) r_mem_mem ((ut8*) str + i, slen - i, (ut8*) "\n", 1);
+		const char *ptr = (char*) r_mem_mem ((ut8*) str + i, slen - i, (ut8*) "\n", 1);
 		if (!ptr) {
 			ptr = (char*) r_mem_mem ((ut8*) str + i, slen - i, (ut8*) key, klen);
 			if (ptr) {
@@ -3844,7 +3822,7 @@ R_API void r_str_stripLine(char *str, const char *key) {
 			break;
 		}
 
-		off = (size_t) (ptr - (str + i)) + 1;
+		size_t off = (size_t) (ptr - (str + i)) + 1;
 
 		ptr = (char*) r_mem_mem ((ut8*) str + i, off, (ut8*) key, klen);
 		if (ptr) {
@@ -3874,11 +3852,9 @@ R_API char *r_str_list_join(RList *str, const char *sep) {
 R_API char *r_str_array_join(const char **a, size_t n, const char *sep) {
 	RStrBuf *sb = r_strbuf_new ("");
 	size_t i;
-
 	if (n > 0) {
 		r_strbuf_append (sb, a[0]);
 	}
-
 	for (i = 1; i < n; i++) {
 		r_strbuf_append (sb, sep);
 		r_strbuf_append (sb, a[i]);
@@ -4031,15 +4007,52 @@ R_API const char *r_str_str_xy(const char *s, const char *word, const char *prev
 #endif
 
 R_API char *r_str_version(const char *program) {
+	const char *release = "";
+	const char *asanstr = "";
+	const char *newabi = "";
+	const char *gplstr = "lgpl";
+	char optistr[5] = " -O?";
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+	asanstr = " asan";
+#endif
+#else
+#if defined(__SANITIZE_ADDRESS__) // gcc < 14
+	asanstr = " asan";
+#endif
+#endif
+#if R2_VERSION_COMMIT == 0
+	release = " release";
+#endif
+#if R2_USE_NEW_ABI
+	newabi = " newabi";
+#endif
+#ifdef _FORTIFY_SOURCE
+	// clang
+	optistr[3] = '0' + _FORTIFY_SOURCE;
+#endif
+#ifdef __OPTIMIZE__
+	// gcc
+	optistr[3] = '0' + __OPTIMIZE__;
+#endif
+#if WITH_GPL
+	gplstr = " gpl";
+#endif
 	char *s = r_str_newf ("%s "R2_VERSION" %d @ "
 			R_SYS_OS"-"
-			R_SYS_ARCH"-%d git.%s\n",
+			R_SYS_ARCH"-%d\n",
 			program, R2_VERSION_COMMIT,
-			(R_SYS_BITS & 8)? 64: 32,
+			(R_SYS_BITS & 8)? 64: 32);
+	int csv = R2_CSVERSION;
+	s = r_str_appendf (s, "birth: git.%s "R2_BIRTH"\n",
 			*R2_GITTAP ? R2_GITTAP: "");
-	if (*R2_GITTIP) {
-		s = r_str_append (s, "commit: "R2_GITTIP" build: "R2_BIRTH);
+	if (*R2_GITTIP) { // Can't use && because of a bug in clang :lol:
+		if (strcmp (R2_GITTIP, "unknown")) {
+			s = r_str_append (s, "commit: "R2_GITTIP"\n");
+		}
 	}
+	s = r_str_appendf (s, "options:%s%s%s%s%s cs:%d cl:%d %s",
+			gplstr, asanstr, newabi, release, optistr, csv, R_CHECKS_LEVEL, R_BUILDSYSTEM);
 	return s;
 }
 
@@ -4101,3 +4114,38 @@ R_API void r_str_fixspaces(char *str) {
 	r_str_trim_tail (str);
 }
 
+R_API char *r_str_tok_r(char *str, const char *delim, char **save_ptr) {
+	char *ret = NULL;
+	if (str == NULL) {
+		str = *save_ptr;
+	}
+	str += strspn (str, delim);
+	if (*str == '\0') {
+		return NULL;
+	}
+	ret = str;
+	str += strcspn (str, delim);
+	if (*str) {
+		*str++ = '\0';
+	}
+	*save_ptr = str;
+	return ret;
+}
+
+R_API char *r_str_tok_next(char *s) {
+	if (s) {
+		return s + strlen (s) + 1;
+	}
+	return NULL;
+}
+
+R_API R_MUSTUSE char *r_str_after(char *s, char c) {
+	if (s) {
+		char *p = strchr (s, c);
+		if (p) {
+			*p++ = 0;
+			return p;
+		}
+	}
+	return NULL;
+}

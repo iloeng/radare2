@@ -78,7 +78,7 @@ static bool r2k__close(RIODesc *fd) {
 
 static ut64 r2k__lseek(RIO *io, RIODesc *fd, ut64 offset, int whence) {
 	return (!whence) ? offset : whence == 1
-		? io->off + offset : UT64_MAX;
+		? io->off + offset : UT64_MAX - 1;
 }
 
 static bool r2k__plugin_open(RIO *io, const char *pathname, bool many) {
@@ -135,10 +135,12 @@ static RIODesc *r2k__open(RIO *io, const char *pathname, int rw, int mode) {
 }
 
 RIOPlugin r_io_plugin_r2k = {
-	.name = "r2k",
-	.desc = "Kernel access API io",
+	.meta = {
+		.name = "r2k",
+		.desc = "Kernel access API io",
+		.license = "LGPL3",
+	},
 	.uris = "r2k://",
-	.license = "LGPL3",
 	.open = r2k__open,
 	.close = r2k__close,
 	.read = r2k__read,

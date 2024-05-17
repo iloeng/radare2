@@ -1,10 +1,8 @@
-/* radare - Copyright 2014-2022 pancake, defragger */
+/* radare - Copyright 2014-2023 pancake, defragger */
 
 #define R_LOG_ORIGIN "a2f"
 
-#include <r_types.h>
 #include <r_core.h>
-#include <r_io.h>
 
 #define MAXFCNSIZE 4096
 
@@ -397,16 +395,25 @@ static bool analyzeFunction(RCore *core, ut64 addr) {
 
 static int r_cmd_anal_call(void *user, const char *input) {
 	RCore *core = (RCore *) user;
+	static RCoreHelpMessage help_msg_a2f = {
+		"Usage:", "a2f", "Experimental function analysis",
+		"a2f", "", "like af, but with an experimental engine. see anal.a2f",
+		NULL
+	};
 	if (!strncmp (input, "a2", 2)) {
 		switch (input[2]) {
 		case 'f':
+			if (input[3] == '?') {
+				r_core_cmd_help (core, help_msg_a2f);
+				return true;
+			}
+
 			if (!analyzeFunction (core, core->offset)) {
 				R_LOG_DEBUG ("a2f: Failed to analyze function at 0x%08"PFMT64x, core->offset);
 			}
 			break;
 		default:
-			eprintf ("Usage: a2f @ address_of_function          # See anal.a2f\n");
-			eprintf ("a2f is an experimental analysis engine that replaces af.\n");
+			r_core_cmd_help (core, help_msg_a2f);
 			break;
 		}
 		return true;
@@ -416,9 +423,12 @@ static int r_cmd_anal_call(void *user, const char *input) {
 
 // PLUGIN Definition Info
 RCorePlugin r_core_plugin_a2f = {
-	.name = "a2f",
-	.desc = "The reworked analysis from scratch thing",
-	.license = "LGPL3",
+	.meta = {
+		.name = "a2f",
+		.desc = "The reworked analysis from scratch thing",
+		.author = "pancake",
+		.license = "LGPL3",
+	},
 	.call = r_cmd_anal_call,
 };
 

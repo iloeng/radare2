@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2014-2022 - pancake */
+/* radare - LGPL - Copyright 2014-2024 - pancake */
 
 /* this helper api is here because it depends on r_util and r_socket */
 /* we should find a better place for it. r_io? */
@@ -187,9 +187,8 @@ R_API void r_run_free(RRunProfile *r) {
 	}
 }
 
-#if R2__UNIX__
+#if R2__UNIX__ && !__wasi__ && !defined(__serenity__)
 static void set_limit(int n, int a, ut64 b) {
-#ifndef __wasi__
 	if (n) {
 		struct rlimit cl = {b, b};
 		setrlimit (RLIMIT_CORE, &cl);
@@ -197,7 +196,6 @@ static void set_limit(int n, int a, ut64 b) {
 		struct rlimit cl = {0, 0};
 		setrlimit (a, &cl);
 	}
-#endif
 }
 #endif
 
@@ -480,7 +478,7 @@ static bool handle_redirection(const char *cmd, bool in, bool out, bool err) {
 		R_LOG_ERROR ("Cannot create pipe");
 #elif R2__UNIX__
 		if (in) {
-			int pipes[2];
+			int pipes[2] = { -1, -1 };
 			if (pipe (pipes) != -1) {
 				size_t cmdl = strlen (cmd)-2;
 				if (write (pipes[1], cmd + 1, cmdl) != cmdl) {
@@ -987,7 +985,7 @@ R_API bool r_run_config_env(RRunProfile *p) {
 				if (p->_dofork) {
 					pid_t child_pid = r_sys_fork ();
 					if (child_pid == -1) {
-						R_LOG_ERROR ("cannot fork");
+						R_LOG_ERROR ("Cannot fork");
 						r_socket_free (child);
 						r_socket_free (fd);
 						return false;
@@ -1003,7 +1001,7 @@ R_API bool r_run_config_env(RRunProfile *p) {
 
 				if (is_child) {
 					r_socket_close_fd (fd);
-					R_LOG_ERROR ("connected");
+					R_LOG_INFO ("connected");
 					if (p->_pty) {
 						if (!redirect_socket_to_pty (child)) {
 							R_LOG_ERROR ("socket redirection failed");
@@ -1096,7 +1094,7 @@ R_API bool r_run_config_env(RRunProfile *p) {
 	}
 	if (p->_input) {
 		char *inp;
-		int f2[2];
+		int f2[2] = { -1, -1 };
 		if (pipe (f2) != -1) {
 			close (0);
 #if !__wasi__
@@ -1263,7 +1261,7 @@ R_API bool r_run_start(RRunProfile *p) {
 	if (p->_system) {
 		int rc = 0;
 		if (p->_pid) {
-			eprintf ("PID: Cannot determine pid with 'system' directive. Use 'program'.\n");
+			R_LOG_ERROR ("PID: Cannot determine pid with 'system' directive. Use 'program'");
 		}
 		if (p->_daemon) {
 #if R2__WINDOWS__
@@ -1279,20 +1277,21 @@ R_API bool r_run_start(RRunProfile *p) {
 					R_LOG_INFO ("pid = %d", child);
 				}
 				if (p->_pidfile) {
-					char pidstr[32];
-					snprintf (pidstr, sizeof (pidstr), "%d\n", child);
-					r_file_dump (p->_pidfile,
-							(const ut8*)pidstr,
-							strlen (pidstr), 0);
+					r_strf_var (pidstr, 32, "%d\n", (int)child);
+					r_file_dump (p->_pidfile, (const ut8*)pidstr,
+						strlen (pidstr), 0);
 				}
 				exit (0);
 			}
 #if !__wasi__
 			setsid ();
 #endif
+			// setvbuf (stdout, NULL, _IONBF, 0);
 			if (p->_timeout) {
 #if R2__UNIX__
+#if !__wasi__
 				int mypid = r_sys_getpid ();
+#endif
 				if (!r_sys_fork ()) {
 					int use_signal = p->_timeout_sig;
 					if (use_signal < 1) {
@@ -1341,14 +1340,12 @@ R_API bool r_run_start(RRunProfile *p) {
 	if (p->_program) {
 		if (!r_file_exists (p->_program)) {
 			char *progpath = r_file_path (p->_program);
-			if (progpath && *progpath) {
-				free (p->_program);
-				p->_program = progpath;
-			} else {
-				free (progpath);
+			if (!progpath) {
 				R_LOG_ERROR ("file not found: %s", p->_program);
 				return false;
 			}
+			free (p->_program);
+			p->_program = progpath;
 		}
 #if R2__UNIX__
 		// XXX HACK close all non-tty fds
@@ -1401,7 +1398,7 @@ R_API bool r_run_start(RRunProfile *p) {
 			if (child) {
 				if (p->_pidfile) {
 					char pidstr[32];
-					snprintf (pidstr, sizeof (pidstr), "%d\n", child);
+					snprintf (pidstr, sizeof (pidstr), "%d\n", (int)child);
 					r_file_dump (p->_pidfile,
 							(const ut8*)pidstr,
 							strlen (pidstr), 0);

@@ -12,7 +12,7 @@ R_API RDiff *r_diff_new_from(ut64 off_a, ut64 off_b) {
 		d->user = NULL;
 		d->off_a = off_a;
 		d->off_b = off_b;
-		d->diff_cmd = strdup ("diff -u");
+		d->diff_cmd = strdup ("diff -au");
 	}
 	return d;
 }
@@ -273,6 +273,8 @@ R_API char *r_diff_buffers_unified(RDiff *d, const ut8 *a, int la, const ut8 *b,
 	}
 	if (!fa || !fb) {
 		R_LOG_ERROR ("fafb nul");
+		free (fa);
+		free (fb);
 		return NULL;
 	}
 	r_file_dump (fa, a, la, 0);
@@ -298,6 +300,8 @@ R_API char *r_diff_buffers_unified(RDiff *d, const ut8 *a, int la, const ut8 *b,
 	close (fe);
 	r_file_rm (fa);
 	r_file_rm (fb);
+	free (fa);
+	free (fb);
 	free (err);
 	return out;
 }

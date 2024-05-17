@@ -11,14 +11,14 @@
 
 extern struct r_bin_dbginfo_t r_bin_dbginfo_p9;
 
-static bool check_buffer(RBinFile *bf, RBuffer *buf) {
-	RSysArch arch;
+static bool check(RBinFile *bf, RBuffer *buf) {
+	const char *arch;
 	int bits, big_endian;
 	return r_bin_p9_get_arch (buf, &arch, &bits, &big_endian);
 }
 
-static bool load_buffer(RBinFile *bf, void **bin_obj, RBuffer *b, ut64 loadaddr, Sdb *sdb) {
-	if (!check_buffer (bf, b)) {
+static bool load(RBinFile *bf, RBuffer *b, ut64 loadaddr) {
+	if (!check (bf, b)) {
 		return false;
 	}
 
@@ -67,19 +67,16 @@ static bool load_buffer(RBinFile *bf, void **bin_obj, RBuffer *b, ut64 loadaddr,
 		break;
 	}
 
-	if (bin_obj) {
-		*bin_obj = o;
-	}
-
+	bf->bo->bin_obj = o;
 	return true;
 }
 
 static void destroy(RBinFile *bf) {
-	free (bf->o->bin_obj);
+	free (bf->bo->bin_obj);
 }
 
 static ut64 baddr(RBinFile *bf) {
-	RBinPlan9Obj *o = (RBinPlan9Obj *)bf->o->bin_obj;
+	RBinPlan9Obj *o = (RBinPlan9Obj *)bf->bo->bin_obj;
 
 	switch (o->header.magic) {
 	case MAGIC_ARM64:
@@ -110,7 +107,7 @@ static ut64 baddr(RBinFile *bf) {
 		return 0x1000ULL;
 	}
 
-	// unreachable because check_buffer only supports the above architectures
+	// unreachable because check only supports the above architectures
 	return 0;
 }
 
@@ -121,7 +118,7 @@ static RBinAddr *binsym(RBinFile *bf, int type) {
 static RList *entries(RBinFile *bf) {
 	RList *ret;
 	RBinAddr *ptr = NULL;
-	RBinPlan9Obj *o = (RBinPlan9Obj *)bf->o->bin_obj;
+	RBinPlan9Obj *o = (RBinPlan9Obj *)bf->bo->bin_obj;
 
 	if (!(ret = r_list_new ())) {
 		return NULL;
@@ -145,9 +142,9 @@ static RList *entries(RBinFile *bf) {
 static RList *sections(RBinFile *bf) {
 	RList *ret = NULL;
 	RBinSection *ptr = NULL;
-	RBinPlan9Obj *o = (RBinPlan9Obj *)bf->o->bin_obj;
+	RBinPlan9Obj *o = (RBinPlan9Obj *)bf->bo->bin_obj;
 
-	if (!bf->o->info) {
+	if (!bf->bo->info) {
 		return NULL;
 	}
 
@@ -179,6 +176,10 @@ static RList *sections(RBinFile *bf) {
 	}
 	ptr->name = strdup ("text");
 	ptr->size = o->header.text;
+	// for regular applications: header is included in the text segment
+	if (!o->is_kernel) {
+		ptr->size += o->header_size;
+	}
 	ptr->vsize = P9_ALIGN (o->header.text, align);
 	ptr->paddr = phys;
 	ptr->vaddr = baddr (bf);
@@ -187,11 +188,6 @@ static RList *sections(RBinFile *bf) {
 	r_list_append (ret, ptr);
 	phys += ptr->size;
 	vsize += ptr->vsize;
-
-	// for regular applications: header is included in the text segment
-	if (!o->is_kernel) {
-		phys += o->header_size;
-	}
 
 	// switch back to 4k page size
 	align = 0x1000;
@@ -280,7 +276,7 @@ typedef struct {
 
 static st64 sym_read(RBinFile *bf, Sym *sym, const ut64 offset) {
 	st64 size = 0;
-	const RBinPlan9Obj *o = (RBinPlan9Obj *)bf->o->bin_obj;
+	const RBinPlan9Obj *o = (RBinPlan9Obj *)bf->bo->bin_obj;
 	const ut64 syms = o->header_size + o->header.text + o->header.data;
 
 	ut64 value;
@@ -321,8 +317,7 @@ static st64 sym_read(RBinFile *bf, Sym *sym, const ut64 offset) {
 static void sym_fini(void *sym, R_UNUSED void *user) {
 	Sym *s = (Sym *)sym;
 	if (s && s->name) {
-		free (s->name);
-		s->name = NULL;
+		R_FREE (s->name);
 	}
 }
 
@@ -383,7 +378,7 @@ static RList *symbols(RBinFile *bf) {
 	RVector *history = NULL; // <Sym>
 	HtUP *histories = NULL; // <ut64, RVector<Sym> *>
 	RPVector *names = NULL; // <char *>
-	const RBinPlan9Obj *o = (RBinPlan9Obj *)bf->o->bin_obj;
+	const RBinPlan9Obj *o = (RBinPlan9Obj *)bf->bo->bin_obj;
 	ut64 i;
 	Sym sym = {0};
 
@@ -415,8 +410,14 @@ static RList *symbols(RBinFile *bf) {
 
 		// source file name components
 		if (sym.type == 'f') {
+			if (sym.value * 4 > r_buf_size (bf->buf)) {
+				R_LOG_ERROR ("Prevented huge memory allocation");
+				break;
+			}
 			if (r_pvector_length (names) < sym.value) {
-				r_pvector_reserve (names, sym.value);
+				if (!r_pvector_reserve (names, sym.value)) {
+					goto error;
+				}
 				// reserve zeros so this is safe
 				names->v.len = sym.value;
 			}
@@ -497,7 +498,7 @@ static RList *symbols(RBinFile *bf) {
 			goto error;
 		}
 
-		bin_sym->name = sym.name;
+		bin_sym->name = r_bin_name_new (sym.name);
 		bin_sym->paddr = sym.value - baddr (bf);
 		// for kernels the header is not mapped
 		if (o->is_kernel) {
@@ -559,7 +560,6 @@ static RList *symbols(RBinFile *bf) {
 		}
 	}
 
-	sym_fini (&sym, NULL);
 	ht_up_free (histories);
 	r_pvector_free (names);
 	return ret;
@@ -583,7 +583,7 @@ static RList *libs(RBinFile *bf) {
 
 static RBinInfo *info(RBinFile *bf) {
 	RBinInfo *ret = NULL;
-	RSysArch arch;
+	const char *arch;
 	int bits, big_endian;
 	struct plan9_exec header;
 
@@ -604,7 +604,7 @@ static RBinInfo *info(RBinFile *bf) {
 	ret->rclass = strdup ("p9");
 	ret->os = strdup ("Plan9");
 	ret->default_cc = strdup ("p9");
-	ret->arch = strdup (r_sys_arch_str (arch));
+	ret->arch = strdup (arch);
 	ret->machine = strdup (ret->arch);
 	ret->subsystem = strdup ("plan9");
 	ret->type = strdup ("EXEC (executable file)");
@@ -628,10 +628,10 @@ static ut64 size(RBinFile *bf) {
 	if (!bf) {
 		return 0;
 	}
-	if (!bf->o->info) {
-		bf->o->info = info (bf);
+	if (!bf->bo->info) {
+		bf->bo->info = info (bf);
 	}
-	if (!bf->o->info) {
+	if (!bf->bo->info) {
 		return 0;
 	}
 
@@ -679,13 +679,15 @@ static RBuffer *create(RBin *bin, const ut8 *code, int codelen, const ut8 *data,
 }
 
 RBinPlugin r_bin_plugin_p9 = {
-	.name = "p9",
-	.desc = "Plan 9 bin plugin",
-	.license = "MIT",
-	.load_buffer = &load_buffer,
+	.meta = {
+		.name = "p9",
+		.desc = "Plan 9 bin plugin",
+		.license = "MIT",
+	},
+	.load = &load,
 	.size = &size,
 	.destroy = &destroy,
-	.check_buffer = &check_buffer,
+	.check = &check,
 	.baddr = &baddr,
 	.binsym = &binsym,
 	.entries = &entries,

@@ -1,12 +1,6 @@
-/* radare - LGPL - Copyright 2015-2022 - danielps, pancake */
+/* radare - LGPL - Copyright 2015-2023 - danielps, pancake */
 
-#include <string.h>
-#include <r_types.h>
-#include <r_lib.h>
-#include <r_asm.h>
 #include <r_arch.h>
-#include <r_util.h>
-
 #include "./v810_disas.h"
 
 enum {
@@ -453,14 +447,31 @@ static char *v810_regs(RArchSession *s) {
 	return strdup (p);
 }
 
-RArchPlugin r_arch_plugin_v810 = {
-	.name = "v810",
-	.desc = "V810 code analysis plugin",
-	.license = "LGPL3",
+static int archinfo(RArchSession *as, ut32 q) {
+	switch (q) {
+	case R_ARCH_INFO_CODE_ALIGN:
+		return 1;
+	case R_ARCH_INFO_DATA_ALIGN:
+		return 2;
+	case R_ARCH_INFO_MINOP_SIZE:
+		return 1;
+	case R_ARCH_INFO_MAXOP_SIZE:
+		return 4;
+	}
+	return 0;
+}
+
+const RArchPlugin r_arch_plugin_v810 = {
+	.meta = {
+		.name = "v810",
+		.desc = "V810 code analysis plugin",
+		.license = "LGPL3",
+	},
 	.arch = "v810",
 	.bits = R_SYS_BITS_PACK1 (32),
 	.decode = v810_decode,
 	.regs = v810_regs,
+	.info = archinfo,
 };
 
 #ifndef R2_PLUGIN_INCORE

@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2009-2022 - ret2libc, pancake */
+/* radare - LGPL - Copyright 2009-2024 - ret2libc, pancake */
 
 #include <r_types.h>
 #include <r_util.h>
@@ -11,6 +11,9 @@ typedef enum {
 	R_BUFFER_MMAP,
 	R_BUFFER_SPARSE,
 	R_BUFFER_REF,
+#if R2_USE_NEW_ABI
+	R_BUFFER_CACHE,
+#endif
 } RBufferType;
 
 #include "buf_file.c"
@@ -19,6 +22,10 @@ typedef enum {
 #include "buf_mmap.c"
 #include "buf_io.c"
 #include "buf_ref.c"
+
+#if R2_USE_NEW_ABI
+#include "buf_cache.c"
+#endif
 
 static bool buf_init(RBuffer *b, const void *user) {
 	r_return_val_if_fail (b && b->methods, false);
@@ -47,26 +54,30 @@ static ut64 buf_get_size(RBuffer *b) {
 static st64 buf_read(RBuffer *b, ut8 *buf, size_t len) {
 	r_return_val_if_fail (b && b->methods, -1);
 	const RBufferRead bufread = b->methods->read;
-	return bufread? bufread (b, buf, len): -1;
+	r_return_val_if_fail (bufread, -1);
+	return bufread (b, buf, len);
 }
 
 static st64 buf_write(RBuffer *b, const ut8 *buf, size_t len) {
 	r_return_val_if_fail (b && b->methods, -1);
 	buf_wholefree (b);
 	const RBufferWrite bufwrite = b->methods->write;
-	return bufwrite? bufwrite (b, buf, len): -1;
+	r_return_val_if_fail (bufwrite, -1);
+	return bufwrite (b, buf, len);
 }
 
 static st64 buf_seek(RBuffer *b, st64 addr, int whence) {
 	r_return_val_if_fail (b && b->methods, -1);
 	const RBufferSeek bufseek = b->methods->seek;
-	return bufseek? bufseek (b, addr, whence): -1;
+	r_return_val_if_fail (bufseek, -1);
+	return bufseek (b, addr, whence);
 }
 
 static bool buf_resize(RBuffer *b, ut64 newsize) {
 	r_return_val_if_fail (b && b->methods, -1);
 	const RBufferResize bufresize = b->methods->resize;
-	return bufresize? bufresize (b, newsize): false;
+	r_return_val_if_fail (bufresize, false);
+	return bufresize (b, newsize);
 }
 
 static ut8 *get_whole_buf(RBuffer *b, ut64 *sz) {
@@ -104,6 +115,11 @@ static RBuffer *new_buffer(RBufferType type, const void *user) {
 	case R_BUFFER_MMAP:
 		b->methods = &buffer_mmap_methods;
 		break;
+#if R2_USE_NEW_ABI
+	case R_BUFFER_CACHE:
+		b->methods = &buffer_cache_methods;
+		break;
+#endif
 	case R_BUFFER_SPARSE:
 		b->methods = &buffer_sparse_methods;
 		break;
@@ -198,6 +214,24 @@ R_API RBuffer *r_buf_new_sparse(ut8 Oxff) {
 	return b;
 }
 
+#if R2_USE_NEW_ABI
+R_API RBuffer *r_buf_new_with_cache(RBuffer *sb, bool steal) {
+	RBuffer *b = new_buffer (R_BUFFER_CACHE, NULL);
+	if (b) {
+		struct minicachebuf {
+			RBuffer *sb;
+			bool owned;
+			ut64 length;
+		};
+		struct minicachebuf *mcb = b->priv;
+		mcb->sb = sb;
+		mcb->owned = steal;
+		mcb->length = r_buf_size (sb);
+	}
+	return b;
+}
+#endif
+
 R_API RBuffer *r_buf_new(void) {
 	struct buf_bytes_user u = {0};
 	u.data = NULL;
@@ -272,13 +306,13 @@ R_API bool r_buf_set_bytes(RBuffer *b, const ut8 *buf, ut64 length) {
 	if (!r_buf_resize (b, 0)) {
 		return false;
 	}
-	if (r_buf_seek (b, 0, R_BUF_SET) < 0) {
+	if (r_buf_seek (b, 0, R_BUF_SET) == -1) {
 		return false;
 	}
 	if (!r_buf_append_bytes (b, buf, length)) {
 		return false;
 	}
-	return r_buf_seek (b, 0, R_BUF_SET) >= 0;
+	return r_buf_seek (b, 0, R_BUF_SET) != -1;
 }
 
 R_API bool r_buf_prepend_bytes(RBuffer *b, const ut8 *buf, ut64 length) {
@@ -303,7 +337,7 @@ R_API char *r_buf_tostring(RBuffer *b) {
 R_API bool r_buf_append_bytes(RBuffer *b, const ut8 *buf, ut64 length) {
 	r_return_val_if_fail (b && buf && !b->readonly, false);
 
-	if (r_buf_seek (b, 0, R_BUF_END) < 0) {
+	if (r_buf_seek (b, 0, R_BUF_END) == -1) {
 		return false;
 	}
 	return r_buf_write (b, buf, length) >= 0;
@@ -323,12 +357,12 @@ R_API bool r_buf_append_nbytes(RBuffer *b, ut64 length) {
 R_API st64 r_buf_insert_bytes(RBuffer *b, ut64 addr, const ut8 *buf, ut64 length) {
 	r_return_val_if_fail (b && !b->readonly, -1);
 	st64 pos, r = r_buf_seek (b, 0, R_BUF_CUR);
-	if (r < 0) {
+	if (r == -1) {
 		return r;
 	}
 	pos = r;
 	r = r_buf_seek (b, addr, R_BUF_SET);
-	if (r < 0) {
+	if (r == -1) {
 		goto restore_pos;
 	}
 
@@ -343,7 +377,7 @@ R_API st64 r_buf_insert_bytes(RBuffer *b, ut64 addr, const ut8 *buf, ut64 length
 		goto free_tmp;
 	}
 	r = r_buf_seek (b, addr + length, R_BUF_SET);
-	if (r < 0) {
+	if (r == -1) {
 		goto free_tmp;
 	}
 	r = r_buf_write (b, tmp, tmp_length);
@@ -351,7 +385,7 @@ R_API st64 r_buf_insert_bytes(RBuffer *b, ut64 addr, const ut8 *buf, ut64 length
 		goto free_tmp;
 	}
 	r = r_buf_seek (b, addr, R_BUF_SET);
-	if (r < 0) {
+	if (r == -1) {
 		goto free_tmp;
 	}
 	r = r_buf_write (b, buf, length);
@@ -561,6 +595,7 @@ static st64 buf_format(RBuffer *dst, RBuffer *src, const char *fmt, int n) {
 	return res;
 }
 
+// TODO: add r_buf_fnread or nfread for safety reasons. callers never know what they are doing
 R_API st64 r_buf_fread(RBuffer *b, ut8 *buf, const char *fmt, int n) {
 	r_return_val_if_fail (b && buf && fmt, -1);
 	// XXX: we assume the caller knows what he's doing
@@ -573,11 +608,12 @@ R_API st64 r_buf_fread(RBuffer *b, ut8 *buf, const char *fmt, int n) {
 	return -1;
 }
 
+// UNSAFE
 R_API st64 r_buf_fread_at(RBuffer *b, ut64 addr, ut8 *buf, const char *fmt, int n) {
 	r_return_val_if_fail (b && buf && fmt, -1);
 	st64 o_addr = r_buf_seek (b, 0, R_BUF_CUR);
 	st64 r = r_buf_seek (b, addr, R_BUF_SET);
-	if (r < 0) {
+	if (r == -1) {
 		return r;
 	}
 	r = r_buf_fread (b, buf, fmt, n);
@@ -598,7 +634,7 @@ R_API st64 r_buf_fwrite_at(RBuffer *b, ut64 addr, const ut8 *buf, const char *fm
 	r_return_val_if_fail (b && buf && fmt && !b->readonly, -1);
 	st64 o_addr = r_buf_seek (b, 0, R_BUF_CUR);
 	st64 r = r_buf_seek (b, addr, R_BUF_SET);
-	if (r < 0) {
+	if (r == -1) {
 		return r;
 	}
 	r = r_buf_fwrite (b, buf, fmt, n);
@@ -610,7 +646,7 @@ R_API st64 r_buf_read_at(RBuffer *b, ut64 addr, ut8 *buf, ut64 len) {
 	r_return_val_if_fail (b && buf, -1);
 	st64 o_addr = r_buf_seek (b, 0, R_BUF_CUR);
 	st64 r = r_buf_seek (b, addr, R_BUF_SET);
-	if (r < 0) {
+	if (r == -1) {
 		return r;
 	}
 	r = r_buf_read (b, buf, len);
@@ -622,7 +658,7 @@ R_API st64 r_buf_write_at(RBuffer *b, ut64 addr, const ut8 *buf, ut64 len) {
 	r_return_val_if_fail (b && buf && !b->readonly, -1);
 	st64 o_addr = r_buf_seek (b, 0, R_BUF_CUR);
 	st64 r = r_buf_seek (b, addr, R_BUF_SET);
-	if (r < 0) {
+	if (r == -1) {
 		return r;
 	}
 	r = r_buf_write (b, buf, len);

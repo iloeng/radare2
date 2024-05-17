@@ -55,3 +55,19 @@ EXPECT=<<EOF
 0x00000018  2f62 696e 2f73 6800 0000 0000 0000 0000  /bin/sh.........
 EOF
 RUN
+
+NAME=false posititve syscalls in thumb code
+FILE=bins/elf/libarm.so
+CMDS=<<EOF
+aae
+pi 1 @@ syscall.*
+EOF
+EXPECT=<<EOF
+svc 0xef
+svc 0x9e
+svc 0x72
+svc 0xa7
+svc 0x42
+svc 0xb6
+EOF
+RUN

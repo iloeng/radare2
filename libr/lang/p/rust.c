@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2016-2022 pancake */
+/* radare - LGPL - Copyright 2016-2023 pancake */
 
 #include <r_lang.h>
 
@@ -66,9 +66,12 @@ static int lang_rust_file(RLangSession *s, const char *file) {
 	return 0;
 }
 
-static int lang_rust_init(void *user) {
+static void *lang_rust_init(void *user) {
 	// TODO: check if "valac" is found in path
-	return true;
+	char *rustc = r_file_path ("rustc");
+	bool found = (rustc && *rustc != 'r');
+	free (rustc);
+	return (void*)(size_t)found;
 }
 
 static bool lang_rust_run(RLangSession *s, const char *code, int len) {
@@ -117,11 +120,13 @@ static bool lang_rust_run(RLangSession *s, const char *code, int len) {
 }
 
 static RLangPlugin r_lang_plugin_rust = {
-	.name = "rust",
+	.meta = {
+		.name = "rust",
+		.author = "pancake",
+		.license = "MIT",
+		.desc = "Rust language extension",
+	},
 	.ext = "rs",
-	.author = "pancake",
-	.license = "MIT",
-	.desc = "Rust language extension",
 	.run = lang_rust_run,
 	.init = (void*)lang_rust_init,
 	.run_file = (void*)lang_rust_file,

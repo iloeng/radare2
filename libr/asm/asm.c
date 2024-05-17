@@ -1,12 +1,8 @@
-/* radare - LGPL - Copyright 2009-2022 - pancake, nibble */
+/* radare - LGPL - Copyright 2009-2024 - pancake, nibble */
 
 // needed for spp
 #define USE_R2 1
 #include <r_core.h>
-#include <r_types.h>
-#include <r_util.h>
-#include <r_asm.h>
-#include <r_anal.h> // for RAnalBind.. but we should directly use RArch
 #include <spp/spp.h>
 #include <config.h>
 
@@ -185,6 +181,7 @@ R_API RAsm *r_asm_new(void) {
 	if (!a) {
 		return NULL;
 	}
+	a->codealign = 1;
 	a->dataalign = 1;
 	a->plugins = r_list_newf (NULL);
 	if (!a->plugins) {
@@ -298,53 +295,22 @@ R_API bool r_asm_use(RAsm *a, const char *name) {
 	} else {
 		R_FREE (dotname);
 	}
-#if 0
-	RListIter *iter;
-	RAsmPlugin *h;
-	r_list_foreach (a->plugins, iter, h) {
-		if (!strcmp (h->name, name)) {
-			if (!a->cur || (a->cur && h->arch && strcmp (a->cur->arch, h->arch))) {
-				a->cur = h;
-				load_asm_descriptions (a);
-				r_asm_set_cpu (a, NULL);
-			}
-			a->cur = h;
-			return true;
-		}
-		if (dotname && h->arch && !strcmp (dotname, h->arch)) {
-			char *arch = r_str_ndup (name, vv - name);
-#if 0
-			r_arch_config_set_cpu (a->config, arch);
-#else
-			r_asm_set_cpu (a, arch);
-#endif
-			a->cur = h;
-			load_asm_descriptions (a);
-			free (arch);
-			return true;
-		}
-	}
-#endif
 	if (a->analb.anal) {
 		if (a->analb.use (a->analb.anal, name)) {
 			load_asm_descriptions (a);
-			//a->cur = NULL;
+			// a->cur = NULL;
 			// a->acur = NULL;
 			return true;
 		}
-		R_LOG_ERROR ("Cannot find '%s' asm/arch/anal plugin. See rasm2 -L or -LL", name);
+		R_LOG_ERROR ("Cannot find '%s' arch plugin. See rasm2 -L or -LL", name);
 	}
-#if 0
-	// check if its a valid analysis plugin
-	sdb_free (a->pair);
-	a->pair = NULL;
-#endif
 	if (strcmp (name, "null")) {
 		return r_asm_use (a, "null");
 	}
 	return false;
 }
 
+// R2_600
 // XXX this is r_arch
 R_DEPRECATE R_API void r_asm_set_cpu(RAsm *a, const char *cpu) {
 	r_return_if_fail (a);
@@ -358,7 +324,6 @@ R_DEPRECATE R_API int r_asm_set_bits(RAsm *a, int bits) {
 
 R_API bool r_asm_set_big_endian(RAsm *a, bool b) {
 	r_return_val_if_fail (a, false);
-	a->config->endian = R_SYS_ENDIAN ? R_SYS_ENDIAN_BIG: R_SYS_ENDIAN_LITTLE; // default is host endian
 #if 0
 	if (a->cur) {
 		switch (a->cur->endian) {
@@ -382,6 +347,11 @@ R_API bool r_asm_set_big_endian(RAsm *a, bool b) {
 	} else {
 	}
 #endif
+	// default is host endian
+	// a->config->endian = R_SYS_ENDIAN ? R_SYS_ENDIAN_BIG: R_SYS_ENDIAN_LITTLE; // default is host endian
+	if (a->arch) {
+		r_arch_set_endian (a->arch, a->config->endian);
+	}
 	a->config->endian = b ? R_SYS_ENDIAN_BIG: R_SYS_ENDIAN_LITTLE;
 	return R_ARCH_CONFIG_IS_BIG_ENDIAN (a->config);
 }
@@ -397,8 +367,8 @@ static bool is_invalid(RAnalOp *op) {
 }
 
 R_API int r_asm_disassemble(RAsm *a, RAnalOp *op, const ut8 *buf, int len) {
+	R_RETURN_VAL_IF_FAIL (a && buf && op, -1);
 	r_asm_op_init (op);
-	r_return_val_if_fail (a && buf && op, -1);
 	if (len < 1) {
 		return 0;
 	}
@@ -407,11 +377,11 @@ R_API int r_asm_disassemble(RAsm *a, RAnalOp *op, const ut8 *buf, int len) {
 	op->size = 4;
 	// op->bitsize = 0;
 	r_anal_op_set_mnemonic (op, op->addr, "");
-	if (a->config->pcalign) {
-		const int mod = a->pc % a->config->pcalign;
+	if (a->config->codealign) {
+		const int mod = a->pc % a->config->codealign;
 		if (mod) {
 			r_anal_op_set_mnemonic (op, op->addr, "unaligned");
-			op->size = a->config->pcalign - mod;
+			op->size = a->config->codealign - mod;
 			return -1;
 		}
 	}
@@ -520,18 +490,7 @@ R_API void r_asm_list_directives(void) {
 	}
 }
 
-R_API RAnalOp *r_asm_assemble2(RAsm *a, const char *str) {
-	RAnalOp *op = r_anal_op_new ();
-	r_anal_op_set_mnemonic (op, a->pc, str);
-	bool res = r_arch_session_encode (a->ecur, op, R_ARCH_SYNTAX_INTEL);
-	if (!res) {
-		r_anal_op_free (op);
-		return NULL;
-	}
-	return op;
-}
-
-// returns instruction size
+// returns instruction size.. but we have the size in analop and should return bool because thats just a wrapper around analb.encode
 static int r_asm_assemble(RAsm *a, RAnalOp *op, const char *buf) {
 	r_return_val_if_fail (a && op && buf, 0);
 	int ret = 0;
@@ -542,38 +501,18 @@ static int r_asm_assemble(RAsm *a, RAnalOp *op, const char *buf) {
 	if (a->ifilter) {
 		r_parse_parse (a->ifilter, buf, b);
 	}
-
 	r_str_case (b, false); // to-lower
-#if 0
-	r_asm_op_init (op);
-	Ase ase = find_assembler (a, NULL);
-	if (!ase) {
-		ase = find_assembler (a, ".ks");
-		if (!ase) {
-			ase = find_assembler (a, ".nz");
-#if 0
-			if (!ase) {
-				ase = find_assembler (a, NULL);
-			}
-#endif
-		}
-	}
-	if (!ase && a->analb.anal) {
-		ase = NULL;
-#else
 	if (a->analb.anal) {
-#endif
-		// disassemble using the analysis plugin if found
-		//RAnalOp aop;
-		//a->analb.opinit (&aop);
 		ut8 buf[256] = {0};
-		// XXX we shuold use just RArch and ecur/dcur
+		a->analb.anal->arch->cfg->endian = a->config->endian;
+		// XXX we should use just RArch and ecur/dcur
 		ret = a->analb.encode (a->analb.anal, a->pc, b, buf, sizeof (buf));
 		if (ret > 0) {
-			// r_anal_op_set_bytes (op, op->addr, buf, R_MIN (ret, sizeof (buf)));
 			r_anal_op_set_bytes (op, a->pc, buf, R_MIN (ret, sizeof (buf)));
-		} // else fail to assemble
-		// a->analb.opfini (&aop);
+		}
+	} else {
+		R_LOG_ERROR ("Cannot assemble because there are no anal binds into the asm instance %p", a);
+		ret = -1;
 #if 0
 	} else if (ase) {
 		/* find callback if no assembler support in current plugin */
@@ -695,6 +634,7 @@ static int parse_asm_directive(RAsm *a, RAnalOp *op, RAsmCode *acode, char *ptr_
 				R_LOG_WARN ("Cannot resolve '%s'", str);
 			}
 			free (str);
+			r_lib_dl_close (p);
 		}
 		ret = 0;
 	} else if (r_str_startswith (ptr, ".string ")) {
@@ -744,7 +684,7 @@ static int parse_asm_directive(RAsm *a, RAnalOp *op, RAsmCode *acode, char *ptr_
 	} else if (r_str_startswith (ptr, ".int32 ")) {
 		ret = r_asm_pseudo_int32 (a, op, ptr + 7);
 	} else if (r_str_startswith (ptr, ".int64 ")) {
-		char *str = r_asm_code_equ_replace (acode, strdup (ptr + 7));
+		char *str = r_asm_code_equ_replace (acode, ptr + 7);
 		ret = r_asm_pseudo_int64 (a, op, str); // ptr + 7);
 		free (str);
 	} else if (r_str_startswith (ptr, ".size")) {
@@ -758,19 +698,21 @@ static int parse_asm_directive(RAsm *a, RAnalOp *op, RAsmCode *acode, char *ptr_
 		R_LOG_DEBUG (".global directive does nothing for now");
 		ret = 0;
 	} else if (r_str_startswith (ptr, ".equ ")) {
-		ptr2 = strchr (ptr + 5, ',');
+		char *arg = (char *)r_str_trim_head_ro (ptr + 5);
+		ptr2 = strchr (arg, ',');
 		if (!ptr2) {
-			ptr2 = strchr (ptr + 5, '=');
+			ptr2 = strchr (arg, '=');
 		}
 		if (!ptr2) {
-			ptr2 = strchr (ptr + 5, ' ');
+			ptr2 = strchr (arg, ' ');
 		}
 		if (ptr2) {
 			*ptr2 = '\0';
-			r_asm_code_set_equ (acode, ptr + 5, ptr2 + 1);
+			r_asm_code_set_equ (acode, arg, ptr2 + 1);
+			*ptr2 = ' ';
 			ret = 0;
 		} else {
-			R_LOG_ERROR ("Invalid syntax for '.equ': Use '.equ <word> <word>'");
+			R_LOG_ERROR ("Invalid syntax for '.equ': Use '.equ <word>=<word>'");
 		}
 	} else if (r_str_startswith (ptr, ".org ")) {
 		if (r_asm_pseudo_org (a, ptr + 5)) {
@@ -815,8 +757,7 @@ static inline char *next_token(const char *tok) {
 
 R_API RAsmCode *r_asm_massemble(RAsm *a, const char *assembly) {
 	int num, stage, ret, idx, ctr, i, linenum = 0;
-	char *lbuf = NULL, *ptr = NULL, *ptr_start = NULL;
-	RAsmCode *acode = NULL;
+	char *ptr = NULL, *ptr_start = NULL;
 	RAnalOp op = {0};
 	ut64 off, pc;
 
@@ -835,13 +776,15 @@ R_API RAsmCode *r_asm_massemble(RAsm *a, const char *assembly) {
 		free (tokens);
 		return NULL;
 	}
-	if (!(acode = r_asm_code_new ())) {
+	RAsmCode *acode = r_asm_code_new ();
+	if (!acode) {
 		free (tokens);
 		return NULL;
 	}
 	acode->assembly = strdup (assembly);
 	acode->bytes = calloc (1, 64);
-	lbuf = strdup (assembly);
+
+	char *lbuf = strdup (assembly);
 	acode->code_align = 0;
 
 	/* consider ,, an alias for a newline */
@@ -920,6 +863,7 @@ R_API RAsmCode *r_asm_massemble(RAsm *a, const char *assembly) {
 		}
 		inComment = false;
 		r_asm_set_pc (a, pc);
+		linenum = 0;
 		for (idx = ret = i = 0, off = a->pc; i <= ctr; i++, idx += ret) {
 			buf_token = tokens[i];
 			if (!buf_token) {
@@ -1037,7 +981,7 @@ R_API RAsmCode *r_asm_massemble(RAsm *a, const char *assembly) {
 					if (!*ptr_start) {
 						continue;
 					}
-					ret = r_asm_assemble (a, &op, ptr_start);
+					ret = r_asm_assemble (a, &op, strdup (ptr_start));
 				}
 			}
 			if (stage == STAGES - 1) {
@@ -1094,11 +1038,6 @@ R_API char *r_asm_describe(RAsm *a, const char* str) {
 
 R_API const RList* r_asm_get_plugins(RAsm *a) {
 	return a->plugins;
-}
-
-// XXX UNUSED! R2_590 delete
-R_API bool r_asm_set_arch(RAsm *a, const char *name, int bits) {
-	return r_asm_use (a, name)? r_asm_set_bits (a, bits): false;
 }
 
 /* to ease the use of the native bindings (not used in r2) */
@@ -1171,6 +1110,7 @@ R_API int r_asm_mnemonics_byname(RAsm *a, const char *name) {
 	return 0;
 }
 
+// XXX find better name for this function asm_rasm_assemble wtf
 R_API RAsmCode* r_asm_rasm_assemble(RAsm *a, const char *buf, bool use_spp) {
 	r_return_val_if_fail (a && buf, NULL);
 	char *lbuf = strdup (buf);
@@ -1178,9 +1118,10 @@ R_API RAsmCode* r_asm_rasm_assemble(RAsm *a, const char *buf, bool use_spp) {
 		return NULL;
 	}
 	if (use_spp) {
-		Output out;
-		out.fout = NULL;
-		out.cout = r_strbuf_new ("");
+		Output out = {
+			.fout = NULL,
+			.cout = r_strbuf_new ("")
+		};
 		r_strbuf_init (out.cout);
 		struct Proc proc;
 		spp_proc_set (&proc, "spp", 1);
@@ -1196,23 +1137,12 @@ R_API RAsmCode* r_asm_rasm_assemble(RAsm *a, const char *buf, bool use_spp) {
 }
 
 R_API RList *r_asm_cpus(RAsm *a) {
-	RListIter *iter;
-	char *item;
-	// get asm plugin
-	RList *list = (a->config && a->config->cpu)
-		? r_str_split_duplist (a->config->cpu, ",", 0)
+	r_return_val_if_fail (a, NULL);
+	// R2_600 move to r_arch api instead?
+	const char *cpus = R_UNWRAP5 (a, arch, session, plugin, cpus);
+	RList *list = cpus
+		? r_str_split_duplist (cpus, ",", 0)
 		: r_list_newf (free);
-	// get anal plugin
-	if (a->analb.anal && a->analb.anal->cur && a->analb.anal->cur->cpus) {
-		char *cpus = a->analb.anal->cur->cpus;
-		RList *al = r_str_split_duplist (cpus, ",", 0);
-		r_list_foreach (al, iter, item) {
-			if (!r_list_find (list, item, (RListComparator)strcmp)) {
-				r_list_append (list, strdup (item));
-			}
-		}
-		r_list_free (al);
-	}
 	r_list_sort (list, (RListComparator)strcmp);
 	return list;
 }

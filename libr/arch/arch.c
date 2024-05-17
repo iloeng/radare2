@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2022 - pancake, condret */
+/* radare - LGPL - Copyright 2022-2023 - pancake, condret */
 
 #include <r_arch.h>
 #include <config.h>
@@ -23,44 +23,78 @@ R_API RArch *r_arch_new(void) {
 	a->cfg = r_arch_config_new ();
 	ut32 i = 0;
 	while (arch_static_plugins[i]) {
-		r_arch_add (a, (RArchPlugin*)arch_static_plugins[i++]);
+		r_arch_plugin_add (a, (RArchPlugin*)arch_static_plugins[i++]);
 	}
 	return a;
 }
 
 static ut32 _rate_compat(RArchPlugin *p, RArchConfig *cfg, const char *name) {
-	ut32 bits = cfg->bits;
 	ut32 score = 0;
-	if (name && !strcmp (p->name, name)) {
-		score += 50;
+	if (name && !strcmp (p->meta.name, name)) {
+		score += 100;
 	}
-	if (cfg->arch && !strcmp (p->arch, cfg->arch)) {
-		score += 50;
-	}
-	if (score > 0) {
-		if (strstr (p->name, ".nz")) {
+	ut32 bits = R_SYS_BITS;
+	if (cfg) {
+		bits = cfg->bits;
+		//eprintf ("compare %s %s\n", p->arch, cfg->arch);
+		if (cfg->arch && !strcmp (p->arch, cfg->arch)) {
 			score += 50;
-		}
-		if (R_SYS_BITS_CHECK (p->bits, bits)) {
-			score += (!!score) * 30;
 		}
 		if (p->endian & cfg->endian) {
 			score += (!!score) * 20;
 		}
 	}
+	if (score > 0) {
+		if (strstr (p->meta.name, ".nz")) {
+			score += 50;
+		}
+		if (R_SYS_BITS_CHECK (p->bits, bits)) {
+			score += (!!score) * 30;
+		}
+	}
 	return score;
 }
 
-static RArchPlugin *find_bestmatch(RArch *arch, RArchConfig *cfg, const char *name) {
+static RArchPlugin *find_bestmatch(RArch *arch, RArchConfig *cfg, const char *name, bool enc) {
 	ut8 best_score = 0;
 	RArchPlugin *ap = NULL;
 	RListIter *iter;
 	RArchPlugin *p;
 	r_list_foreach (arch->plugins, iter, p) {
+#if 1
+		if (enc) {
+			if (!p->encode) {
+				continue;
+			}
+		} else {
+			if (!p->decode) {
+				continue;
+			}
+		}
+#else
+		if (enc && !p->encode) {
+			continue;
+		}
+#endif
 		const ut32 score = _rate_compat (p, cfg, name);
 		if (score > 0 && score > best_score) {
 			best_score = score;
 			ap = p;
+		}
+	}
+	// fallback: retry accepting only encoders just in case
+	if (!ap) {
+		RListIter *iter;
+		RArchPlugin *p;
+		r_list_foreach (arch->plugins, iter, p) {
+			if (enc && !p->encode) {
+				continue;
+			}
+			const ut32 score = _rate_compat (p, cfg, name);
+			if (score > 0 && score > best_score) {
+				best_score = score;
+				ap = p;
+			}
 		}
 	}
 	return ap;
@@ -74,18 +108,41 @@ R_API bool r_arch_use(RArch *arch, RArchConfig *config, const char *name) {
 		config = arch->cfg;
 	}
 #if 0
+	if (arch->session && !strcmp (name, arch->session->plugin->name)) {
+		R_LOG_WARN ("already set%c", 10);
+		arch->cfg = config;
+		return true;
+	}
 	if (config && arch->cfg == config) {
-		eprintf ("retur\n");
 		return true;
 	}
 #endif
-	RArchPlugin *ap = find_bestmatch (arch, config, name);
+	RArchPlugin *ap = find_bestmatch (arch, config, name, false);
 	if (!ap) {
 		r_unref (arch->session);
 		arch->session = NULL;
 		return false;
 	}
+	r_unref (arch->session);
 	arch->session = r_arch_session (arch, config, ap);
+	if (arch->session && !arch->session->encoder) {
+		RArchPluginEncodeCallback encode = arch->session->plugin->encode;
+		if (encode) {
+			arch->session->encoder = arch->session;
+		} else {
+			free (config->arch);
+			config->arch = strdup (arch->session->plugin->arch);
+			RArchPlugin *ap = find_bestmatch (arch, config, name, true);
+			if (ap) {
+				RArchSession *es = r_arch_session (arch, config, ap);
+				if (es && es->plugin == arch->session->plugin) {
+					r_unref (es);
+				} else if (es) {
+					arch->session->encoder = es;
+				}
+			}
+		}
+	}
 #if 0
 	RArchConfig *oconfig = arch->cfg;
 	r_unref (arch->cfg);
@@ -113,6 +170,7 @@ R_API bool r_arch_use_encoder(RArch *arch, const char *dname) {
 // set bits and update config
 // This api conflicts with r_arch_config_set_bits
 R_API bool r_arch_set_bits(RArch *arch, ut32 bits) {
+	// XXX unused??
 	r_return_val_if_fail (arch && bits, false);
 	if (!arch->cfg) {
 		RArchConfig *cfg = r_arch_config_new ();
@@ -178,17 +236,40 @@ R_API bool r_arch_set_arch(RArch *arch, char *archname) {
 	return true;
 }
 
-R_API bool r_arch_add(RArch *a, RArchPlugin *ap) {
+R_API RArchPlugin *r_arch_find(RArch *arch, const char *name) {
+#if 0
+	RArchPlugin *arch_plugin;
+	RListIter *iter;
+	r_list_foreach (r->anal->arch->plugins, iter, arch_plugin) { // XXX: fix this properly after 5.8
+		if (!arch_plugin->arch) {
+			continue;
+		}
+		if (!strcmp (arch_plugin->arch, arch)) {
+			found_anal_plugin = true;
+			break;
+		}
+	}
+#endif
+	return find_bestmatch (arch, NULL, name, false);
+}
+
+R_API bool r_arch_plugin_add(RArch *a, RArchPlugin *ap) {
 	r_return_val_if_fail (a && ap, false);
-	if (!ap->name || !ap->arch) {
+	if (!ap->meta.name || !ap->arch) {
 		return false;
 	}
-	return !!r_list_append (a->plugins, ap);
+	return r_list_append (a->plugins, ap) != NULL;
+}
+
+R_API bool r_arch_plugin_remove(RArch *arch, RArchPlugin *ap) {
+	// R2_590 TODO
+	return true;
 }
 
 R_API bool r_arch_del(RArch *arch, const char *name) {
 	r_return_val_if_fail (arch && arch->plugins && name, false);
-	RArchPlugin *ap = find_bestmatch (arch, NULL, name);
+	RArchPlugin *ap = r_arch_find (arch, name);
+	find_bestmatch (arch, NULL, name, false);
 #if 0
 	if (arch->current && !strcmp (arch->current->p->name, name)) {
 		arch->current = NULL;
@@ -200,12 +281,14 @@ R_API bool r_arch_del(RArch *arch, const char *name) {
 
 R_API void r_arch_free(RArch *arch) {
 	if (arch) {
+		free (arch->platform);
 		r_list_free (arch->plugins);
 		r_unref (arch->cfg);
 		free (arch);
 	}
 }
 
+// query must be ut32!
 R_API int r_arch_info(RArch *a, int query) {
 	// XXX should be unused, because its not tied to a session
 	RArchSession *session = R_UNWRAP2 (a, session);
@@ -213,14 +296,47 @@ R_API int r_arch_info(RArch *a, int query) {
 	return info? info (session, query): -1;
 }
 
+R_API bool r_arch_esilcb(RArch *a, RArchEsilAction action) {
+	RArchSession *session = a->session;
+	RArchPluginEsilCallback esilcb = R_UNWRAP3 (session, plugin, esilcb);
+	return esilcb? esilcb (session, action): false;
+}
+
 R_API bool r_arch_encode(RArch *a, RAnalOp *op, RArchEncodeMask mask) {
-	// XXX should be unused
-	RArchPluginEncodeCallback encode = R_UNWRAP4 (a, session, plugin, encode);
-	return encode? encode (a->session, op, mask): false;
+	RArchSession *session = a->session;
+	RArchPluginEncodeCallback encode = R_UNWRAP3 (session, plugin, encode);
+	if (!encode && session->encoder) {
+		session = session->encoder;
+		encode = R_UNWRAP3 (session, plugin, encode);
+	}
+	return encode? encode (session, op, mask): false;
 }
 
 R_API bool r_arch_decode(RArch *a, RAnalOp *op, RArchDecodeMask mask) {
 	// XXX should be unused
 	RArchPluginEncodeCallback decode = R_UNWRAP4 (a, session, plugin, decode);
-	return decode? decode (a->session, op, mask): false;
+	bool res = false;
+	if (decode) {
+		res = decode (a->session, op, mask);
+		if (!res) {
+			int align = r_arch_info (a, R_ARCH_INFO_CODE_ALIGN);
+			if (align < 1) {
+				align = 1;
+			}
+			int minop = r_arch_info (a, R_ARCH_INFO_INV_OP_SIZE);
+			// adjust mininstr and align
+			int remai = (op->addr + minop) % align;
+			if (align > 1 && remai) {
+				op->size = remai;
+			} else {
+				op->size = minop;
+			}
+			if (mask & R_ARCH_OP_MASK_DISASM) {
+				if (!op->mnemonic) {
+					op->mnemonic = strdup ("invalid");
+				}
+			}
+		}
+	}
+	return res;
 }

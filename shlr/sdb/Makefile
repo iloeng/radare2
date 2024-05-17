@@ -33,7 +33,7 @@ x xxx cxx:
 	$(MAKE) CC=g++ CFLAGS="-fPIC -x c++ -Wall -fpermissive -I../include -Werror"
 
 o xo xoxo ox:
-	g++ -o sdb src/*.c  -I include/
+	g++ -o sdb $(filter-out src/ht.inc.c, src/*.c)  -I include/
 
 wasi wasm: $(WASI_SDK)
 	${MAKE} include/sdb/version.h
@@ -67,7 +67,7 @@ pkgconfig:
 include/sdb/version.h:
 	echo '#define SDB_VERSION "${SDBVER}"' > include/sdb/version.h
 
-CFILES=cdb.c buffer.c cdb_make.c ls.c ht.c sdb.c num.c base64.c text.c
+CFILES=cdb.c cdb_make.c ls.c ht.c sdb.c num.c base64.c text.c
 CFILES+=json.c ns.c lock.c util.c disk.c query.c array.c fmt.c main.c
 EMCCFLAGS=-O2 -s EXPORTED_FUNCTIONS="['_sdb_querys','_sdb_new0']"
 #EMCCFLAGS+=--embed-file sdb.data
@@ -102,11 +102,12 @@ w32dist:
 	rm -rf sdb-${SDBVER}
 
 install-dirs:
-	$(INSTALL_DIR) ${DESTDIR}${MANDIR} ${DESTDIR}${LIBDIR}/pkgconfig ${DESTDIR}${BINDIR} 
+	$(INSTALL_DIR) ${DESTDIR}${MANDIR} ${DESTDIR}${LIBDIR}/pkgconfig ${DESTDIR}${BINDIR}
 	$(INSTALL_DIR) ${DESTDIR}${DATADIR}/vala/vapi ${DESTDIR}${INCDIR}/sdb
 
-INCFLS=sdb.h version.h cdb.h ht_uu.h ht_up.h ht_pp.h types.h
+INCFLS=sdb.h version.h cdb.h ht_uu.h ht_up.h ht_pp.h types.h heap.h
 INCFLS+=ls.h cdb_make.h buffer.h config.h ht.h dict.h set.h ht_inc.h
+INCFLS+=rangstr.h asserts.h cwisstable.h gcc_stdatomic.h msvc_stdatomic.h
 INCFILES=$(addprefix include/sdb/,$(INCFLS))
 
 install: pkgconfig install-dirs
@@ -138,6 +139,25 @@ ifeq ($(BUILD_MEMCACHE),1)
 	$(INSTALL_DATA) ${VALADIR}/mcsdb.vapi ${DESTDIR}${DATADIR}/vala/vapi
 endif
 endif
+
+
+PGOFLAG=-fprofile-instr-generate
+# PGOFLAG=-fcs-profile-generate
+# PGOFLAG=-fprofile-generate
+# PROFDATA=/opt/homebrew/Cellar//llvm/16.0.4/bin/llvm-profdata
+PROFDATA=xcrun llvm-profdata
+pgo:
+	$(MAKE) clean
+	$(MAKE) CFLAGS="-O3 $(PGOFLAG)" LDFLAGS="$(PGOFLAG)"
+	rm -f test/test-*.prof
+	export LLVM_PROFILE_FILE="code-%p.prof" ; $(MAKE) -C test \
+		CFLAGS="-O3 $(PGOFLAG)" LDFLAGS="$(PGOFLAG)"
+	$(PROFDATA) merge -sparse -output=code.prof test/co*.prof
+	rm -f test/test-*.prof
+	$(MAKE) clean
+	$(MAKE) CFLAGS="-O3 -fprofile-use=$(shell pwd)/code.prof"
+	touch code.prof
+# xcrun llvm-cov show src/sdb -instr-profile=$(shell pwd)/code.prof
 
 deinstall uninstall:
 	rm -rf ${DESTDIR}${INCDIR}/sdb
@@ -171,10 +191,10 @@ symstall: install-dirs
 	ln -fs ${PWD}/include/sdb/cdb_make.h ${DESTDIR}${INCDIR}/sdb
 	ln -fs ${PWD}/include/sdb/buffer.h ${DESTDIR}${INCDIR}/sdb
 	ln -fs ${PWD}/include/sdb/config.h ${DESTDIR}${INCDIR}/sdb
-	ln -fs ${PWD}/bindings/vala/sdb.pc ${DESTDIR}${LIBDIR}/pkgconfig
-	ln -fs ${PWD}/bindings/vala/mcsdb.pc ${DESTDIR}${LIBDIR}/pkgconfig
 ifneq (${HAVE_VALA},)
 	$(MKDIR) -p ${DESTDIR}$(VAPIDIR)
+	ln -fs ${PWD}/bindings/vala/sdb.pc ${DESTDIR}${LIBDIR}/pkgconfig
+	ln -fs ${PWD}/bindings/vala/mcsdb.pc ${DESTDIR}${LIBDIR}/pkgconfig
 	ln -fs ${PWD}/bindings/vala/sdb.vapi ${DESTDIR}$(VAPIDIR)
 	ln -fs ${PWD}/bindings/vala/mcsdb.vapi ${DESTDIR}$(VAPIDIR)
 	ln -fs ${PWD}/bindings/vala/sdb.vapi ${DESTDIR}$(VAPIDIR)

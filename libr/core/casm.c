@@ -71,6 +71,7 @@ R_API RList *r_core_asm_strsearch(RCore *core, const char *input, ut64 from, ut6
 	int align = core->search->align;
 	RRegex* rx = NULL;
 	char *tok, *tokens[1024], *code = NULL, *ptr;
+	char *save_ptr = NULL;
 	int idx, tidx = 0, len = 0;
 	int tokcount, matchcount, count = 0;
 	int matches = 0;
@@ -111,7 +112,7 @@ R_API RList *r_core_asm_strsearch(RCore *core, const char *input, ut64 from, ut6
 	}
 	tokens[0] = NULL;
 	for (tokcount = 0; tokcount < R_ARRAY_SIZE (tokens) - 1; tokcount++) {
-		tok = strtok (tokcount? NULL: ptr, ";");
+		tok = r_str_tok_r (tokcount? NULL: ptr, ";", &save_ptr);
 		if (!tok) {
 			break;
 		}
@@ -198,8 +199,12 @@ R_API RList *r_core_asm_strsearch(RCore *core, const char *input, ut64 from, ut6
 					r_asm_op_fini (&op);
 					continue;
 				}
-				//opsz = op.size;
-				opst = strdup (op.mnemonic);
+				if (op.mnemonic) {
+					//opsz = op.size;
+					opst = strdup (op.mnemonic);
+				} else {
+					R_LOG_DEBUG ("Cannot disassemble at 0x%08"PFMT64x, addr);
+				}
 				r_asm_op_fini (&op);
 			}
 			if (opst) {
@@ -486,7 +491,6 @@ static int is_hit_inrange(RCoreAsmHit *hit, ut64 start_range, ut64 end_range) {
 
 R_API RList *r_core_asm_bwdisassemble(RCore *core, ut64 addr, int n, int len) {
 	// if (n > core->blocksize) n = core->blocksize;
-	ut64 at;
 	ut32 idx = 0, hit_count;
 	int numinstr, asmlen, ii;
 	const int addrbytes = core->io->addrbytes;
@@ -495,8 +499,7 @@ R_API RList *r_core_asm_bwdisassemble(RCore *core, ut64 addr, int n, int len) {
 	if (!hits) {
 		return NULL;
 	}
-
-	len = R_MIN (len - len % addrbytes, addrbytes * addr);
+	len = R_MIN (len - (len % addrbytes), addrbytes * addr);
 	if (len < 1) {
 		r_list_free (hits);
 		return NULL;
@@ -510,7 +513,7 @@ R_API RList *r_core_asm_bwdisassemble(RCore *core, ut64 addr, int n, int len) {
 		free (buf);
 		return NULL;
 	}
-	if (!r_io_read_at (core->io, addr - len / addrbytes, buf, len)) {
+	if (!r_io_read_at (core->io, addr - (len / addrbytes), buf, len)) {
 		r_list_free (hits);
 		free (buf);
 		return NULL;
@@ -537,7 +540,9 @@ R_API RList *r_core_asm_bwdisassemble(RCore *core, ut64 addr, int n, int len) {
 			break;
 		}
 	}
-	at = addr - idx / addrbytes;
+
+	ut64 at = addr - idx / addrbytes;
+
 	r_asm_set_pc (core->rasm, at);
 	for (hit_count = 0; hit_count < n; hit_count++) {
 		RAnalOp op;
@@ -782,7 +787,7 @@ R_API ut32 r_core_asm_bwdis_len(RCore* core, int* instr_len, ut64* start_addr, u
 		*instr_len = 0;
 	}
 	if (hits && r_list_length (hits) > 0) {
-		hit = r_list_get_bottom (hits);
+		hit = r_list_first (hits);
 		if (start_addr) {
 			*start_addr = hit->addr;
 		}

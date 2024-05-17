@@ -1,16 +1,26 @@
-/* Copyright (C) 2008-2022 - pancake */
+/* radare2 - LGPL - Copyright 2008-2023 - pancake */
 
 #include <r_arch.h>
-#include <r_asm.h>
-#include <r_lib.h>
 #include <sdb/ht_uu.h>
 #include "./cs_version.h"
 #include "./asm-arm.h"
 
-bool arm64ass(const char *str, ut64 addr, ut32 *op);
-
 static bool encode(RArchSession *s, RAnalOp *op, ut32 mask) {
-	const int bits = s->config->bits;
+	int bits = s->config->bits;
+	if (bits & R_SYS_BITS_32) {
+		bits = 32;
+	} else if (bits & R_SYS_BITS_16) {
+		bits = 16;
+	}
+#if 0
+	if (s->config->bits & R_SYS_BITS_64) {
+		bits = 64;
+	} else if (s->config->bits & R_SYS_BITS_32) {
+		bits = 32;
+	} else if (s->config->bits & R_SYS_BITS_16) {
+		bits = 16;
+	}
+#endif
 	const bool is_thumb = (bits == 16);
 	int opsize;
 	ut32 opcode = UT32_MAX;
@@ -116,12 +126,12 @@ static int assemble(RAsm *a, RAsmOp *op, const char *buf) {
 
 static int archinfo(RArchSession *a, ut32 q) {
 	switch (q) {
-	case R_ANAL_ARCHINFO_DATA_ALIGN:
-	case R_ANAL_ARCHINFO_INV_OP_SIZE:
-	case R_ANAL_ARCHINFO_MAX_OP_SIZE:
+	case R_ARCH_INFO_DATA_ALIGN:
+	case R_ARCH_INFO_INVOP_SIZE:
+	case R_ARCH_INFO_MAXOP_SIZE:
 		break;
-	case R_ANAL_ARCHINFO_MIN_OP_SIZE:
-	case R_ANAL_ARCHINFO_ALIGN:
+	case R_ARCH_INFO_MINOP_SIZE:
+	case R_ARCH_INFO_CODE_ALIGN:
 		if (a->config && a->config->bits == 16) {
 			return 2;
 		}
@@ -130,11 +140,13 @@ static int archinfo(RArchSession *a, ut32 q) {
 	return 4; // XXX
 }
 
-RArchPlugin r_arch_plugin_arm = {
-	.name = "arm",
-	.desc = "custom thumb, arm32 and arm64 assembler",
-	.author = "pancake",
-	.license = "LGPL3",
+const RArchPlugin r_arch_plugin_arm = {
+	.meta = {
+		.name = "arm.nz",
+		.desc = "custom thumb, arm32 and arm64 assembler",
+		.author = "pancake",
+		.license = "LGPL3",
+	},
 	.arch = "arm",
 	.info = archinfo,
 	.bits = R_SYS_BITS_PACK3 (16, 32, 64),

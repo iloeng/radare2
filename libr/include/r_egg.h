@@ -20,8 +20,7 @@ R_LIB_VERSION_HEADER(r_egg);
 #define R_EGG_PLUGIN_ENCODER 1
 
 typedef struct r_egg_plugin_t {
-	const char *name;
-	const char *desc;
+	RPluginMeta meta;
 	int type;
 	RBuffer* (*build) (void *egg);
 } REggPlugin;
@@ -91,13 +90,11 @@ typedef struct r_egg_lang_t {
 } REggLang;
 
 typedef struct r_egg_t {
-	RBuffer *src;
-	RBuffer *buf;
-	RBuffer *bin;
+	RBuffer *src; // input source code
+	RBuffer *buf; // output compiled bytes
+	RBuffer *bin; // input binary data
 	RList *list;
-	//RList *shellcodes; // XXX is plugins nao?
 	RAsm *rasm;
-	RAnal *anal;/// XXX this is temporary hack until asm can use arch
 	RSyscall *syscall;
 	REggLang lang;
 	Sdb *db;
@@ -113,6 +110,7 @@ typedef struct r_egg_t {
 
 /* XXX: this may fail in different arches */
 #if 0
+// XXX should be a ph subcommand to hash strings. ?h must be removed
 r2 -q - <<EOF
 ?e #define R_EGG_OS_LINUX \`?h linux\`
 ?e #define R_EGG_OS_OSX \`?h osx\`
@@ -187,7 +185,8 @@ R_API void r_egg_lang_init(REgg *egg);
 R_API void r_egg_lang_free(REgg *egg);
 R_API char *r_egg_tostring(REgg *egg);
 R_API void r_egg_free(REgg *egg);
-R_API bool r_egg_add(REgg *a, REggPlugin *foo);
+R_API bool r_egg_plugin_add(REgg *a, REggPlugin *plugin);
+R_API bool r_egg_plugin_remove(REgg *a, REggPlugin *plugin);
 R_API void r_egg_reset(REgg *egg);
 R_API bool r_egg_setup(REgg *egg, const char *arch, int bits, int endian, const char *os);
 R_API bool r_egg_include(REgg *egg, const char *file, int format);

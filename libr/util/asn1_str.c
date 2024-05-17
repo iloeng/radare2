@@ -1,4 +1,4 @@
-/* radare2 - LGPL - Copyright 2017-2022 - wargio, pancake */
+/* radare2 - LGPL - Copyright 2017-2023 - wargio, pancake */
 
 #include <r_util.h>
 #include "asn1_oids.h"
@@ -14,7 +14,7 @@ R_API RASN1String *r_asn1_create_string(const char *string, bool allocated, ut32
 	if (s) {
 		s->allocated = allocated;
 		s->length = length;
-		s->string = string;
+		s->string = (char *)string;
 	}
 	return s;
 }
@@ -24,13 +24,11 @@ static RASN1String *newstr(const char *string) {
 }
 
 R_API RASN1String *r_asn1_concatenate_strings(RASN1String *s0, RASN1String *s1, bool freestr) {
-	char* str;
-	ut32 len;
 	if (!s0 || !s1 || s0->length == 0 || s1->length == 0) {
 		return NULL;
 	}
-	len = s0->length + s1->length - 1;
-	str = (char*) malloc (len);
+	ut32 len = s0->length + s1->length - 1;
+	char *str = (char*) malloc (len);
 	if (!str) {
 		if (freestr) {
 			r_asn1_string_free (s0);
@@ -247,25 +245,23 @@ R_API RASN1String* r_asn1_stringify_bytes(const ut8 *buffer, ut32 length) {
 }
 
 R_API RASN1String *r_asn1_stringify_oid(const ut8* buffer, ut32 length) {
-	const ut8 *start, *end;
-	char *str, *t;
 	ut32 i, slen, bits;
-	ut64 oid;
 	if (!buffer || !length) {
 		return NULL;
 	}
 
-	str = (char*) calloc (1, ASN1_OID_LEN);
+	char *str = (char*) calloc (1, ASN1_OID_LEN);
 	if (!str) {
 		return NULL;
 	}
 
-	end = buffer + length;
-	t = str;
+	const ut8 *end = buffer + length;
+	char *t = str;
 	slen = 0;
 	bits = 0;
-	oid = 0;
+	ut64 oid = 0;
 
+	const ut8 *start;
 	for (start = buffer; start < end && slen < ASN1_OID_LEN; start++) {
 		ut8 c = *start;
 		oid <<= 7;
@@ -313,7 +309,7 @@ R_API RASN1String *r_asn1_stringify_oid(const ut8* buffer, ut32 length) {
 R_API void r_asn1_string_free(RASN1String* str) {
 	if (str) {
 		if (str->allocated) {
-			free ((char*) str->string);
+			free (str->string);
 		}
 		free (str);
 	}

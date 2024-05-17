@@ -1,4 +1,4 @@
-/* radare2 - LGPL - Copyright 2009-2022 - pancake */
+/* radare2 - LGPL - Copyright 2009-2023 - pancake */
 
 #include "r_core.h"
 
@@ -159,9 +159,11 @@ R_API ut8* r_core_transform_op(RCore *core, const char *arg, char op) {
 			len = xlen;
 		} else {  // use clipboard as key
 			const ut8 *tmp = r_buf_data (core->yank_buf, &len);
-			str = r_mem_dup (tmp, len);
-			if (!str) {
-				goto beach;
+			if (tmp && len > 0) {
+				str = r_mem_dup (tmp, len);
+				if (!str) {
+					goto beach;
+				}
 			}
 		}
 	} else {
@@ -305,22 +307,24 @@ R_API ut8* r_core_transform_op(RCore *core, const char *arg, char op) {
 				len = numsize;
 			}
 		}
-		for (i = j = 0; i < core->blocksize; i++) {
-			switch (op) {
-			case 'x': buf[i] ^= str[j]; break;
-			case 'a': buf[i] += str[j]; break;
-			case 's': buf[i] -= str[j]; break;
-			case 'm': buf[i] *= str[j]; break;
-			case 'w': buf[i] = str[j]; break;
-			case 'd': buf[i] = (str[j])? (buf[i] / str[j]): 0; break;
-			case 'r': buf[i] >>= str[j]; break;
-			case 'l': buf[i] <<= str[j]; break;
-			case 'o': buf[i] |= str[j]; break;
-			case 'A': buf[i] &= str[j]; break;
-			}
-			j++;
-			if (j >= len) {
-				j = 0; /* cyclic key */
+		if (str) {
+			for (i = j = 0; i < core->blocksize; i++) {
+				switch (op) {
+				case 'x': buf[i] ^= str[j]; break;
+				case 'a': buf[i] += str[j]; break;
+				case 's': buf[i] -= str[j]; break;
+				case 'm': buf[i] *= str[j]; break;
+				case 'w': buf[i] = str[j]; break;
+				case 'd': buf[i] = (str[j])? (buf[i] / str[j]): 0; break;
+				case 'r': buf[i] >>= str[j]; break;
+				case 'l': buf[i] <<= str[j]; break;
+				case 'o': buf[i] |= str[j]; break;
+				case 'A': buf[i] &= str[j]; break;
+				}
+				j++;
+				if (j >= len) {
+					j = 0; /* cyclic key */
+				}
 			}
 		}
 	}
@@ -402,6 +406,7 @@ R_API bool r_core_seek(RCore *core, ut64 addr, bool rb) {
 		r_core_block_read (core);
 	}
 	if (core->binat) {
+		// XXX wtf is this code doing here
 		RBinFile *bf = r_bin_file_at (core->bin, core->offset);
 		if (bf) {
 			core->bin->cur = bf;
@@ -434,24 +439,41 @@ R_API int r_core_seek_delta(RCore *core, st64 addr) {
 	return r_core_seek (core, addr, true);
 }
 
-// TODO: kill this wrapper
+// TODO: R2_600 deprecate this wrapper
 R_API bool r_core_write_at(RCore *core, ut64 addr, const ut8 *buf, int size) {
 	r_return_val_if_fail (core && buf && addr != UT64_MAX, false);
 	if (size < 1) {
 		return false;
 	}
-	bool ret = r_io_write_at (core->io, addr, buf, size);
+#if 1
+	int ret = r_io_write_at (core->io, addr, buf, size);
+	if (ret > 0) {
+		// ensure a little because we can't use bank_write_to_submap_at
+		ut8 word[4];
+		r_io_read_at (core->io, addr, word, sizeof (word));
+		ret = !memcmp (word, buf, R_MIN (size, sizeof (word)));
+	}
+#else
+	int ret = r_io_bank_write_to_submap_at (core->io, core->io->bank, addr, buf, size);
+	if (r_config_get_b (core->config, "io.cache")) {
+		ret = r_io_write_at (core->io, addr, buf, size);
+	} else {
+		ret = r_io_bank_write_to_submap_at (core->io, core->io->bank, addr, buf, size) > 0;
+	}
+	// bool ret = r_io_write_at (core->io, addr, buf, size);
+#endif
 	if (addr >= core->offset && addr <= core->offset + core->blocksize - 1) {
 		r_core_block_read (core);
 	}
-	return ret;
+	return ret > 0;
 }
 
 R_API bool r_core_extend_at(RCore *core, ut64 addr, int size) {
-	if (!core->io || !core->io->desc || size < 1) {
+	r_return_val_if_fail (core && core->io, false);
+	if (!core->io->desc || size < 1 || addr == UT64_MAX) {
 		return false;
 	}
-	int io_va = r_config_get_i (core->config, "io.va");
+	const bool io_va = r_config_get_b (core->config, "io.va");
 	if (io_va) {
 		RIOMap *map = r_io_map_get_at (core->io, core->offset);
 		if (map) {
@@ -460,24 +482,24 @@ R_API bool r_core_extend_at(RCore *core, ut64 addr, int size) {
 		r_config_set_i (core->config, "io.va", false);
 	}
 	int ret = r_io_extend_at (core->io, addr, size);
-	if (addr >= core->offset && addr <= core->offset+core->blocksize) {
+	if (addr >= core->offset && addr <= core->offset + core->blocksize) {
 		r_core_block_read (core);
 	}
-	r_config_set_i (core->config, "io.va", io_va);
+	r_config_set_b (core->config, "io.va", io_va);
 	return ret;
 }
 
-R_API int r_core_shift_block(RCore *core, ut64 addr, ut64 b_size, st64 dist) {
+R_API bool r_core_shift_block(RCore *core, ut64 addr, ut64 b_size, st64 dist) {
 	// bstart - block start, fstart file start
 	ut64 fend = 0, fstart = 0, bstart = 0, file_sz = 0;
 	ut8 * shift_buf = NULL;
-	int res = false;
+	bool res = false;
 
 	if (!core->io || !core->io->desc) {
 		return false;
 	}
 
-	if (b_size == 0 || b_size == (ut64) -1) {
+	if (b_size == 0 || b_size == UT64_MAX) {
 		r_io_use_fd (core->io, core->io->desc->fd);
 		file_sz = r_io_size (core->io);
 		if (file_sz == UT64_MAX) {

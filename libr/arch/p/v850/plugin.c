@@ -376,17 +376,14 @@ static int v850e0_op(RArchSession *a, RAnalOp *op, ut64 addr, const ut8 *buf, in
 	case V850_JARL2:
 		// TODO: fix displacement reading
 		op->type = R_ANAL_OP_TYPE_JMP;
-		op->jump = addr + F5_DISP(((ut32)word2 << 16) | word1);
-		op->fail = addr + 4;
-		r_strbuf_appendf (&op->esil, "pc,%s,=,pc,%u,+=", F5_RN2(word1), F5_DISP(((ut32)word2 << 16) | word1));
+		op->jump = addr + F5_DISP (((ut32)word2 << 16) | word1);
+		r_strbuf_appendf (&op->esil, "pc,%s,:=,0x%"PFMT64x",pc,:=", F5_RN2 (word1), op->jump);
 		break;
-#if 0 // WTF - same opcode as JARL?
-	case V850_JR:
-		jumpdisp = DISP26(word1, word2);
+	case V850_JARL1:
 		op->type = R_ANAL_OP_TYPE_JMP;
-		r_strbuf_appendf (&op->esil, "$$,%d,+,pc,=", jumpdisp);
+		op->jump = addr + F5_DISP (((ut32)word2 << 16) | word1);
+		r_strbuf_appendf (&op->esil, "0x%"PFMT64x",pc,:=", op->jump);
 		break;
-#endif
 	case V850_OR:
 		op->type = R_ANAL_OP_TYPE_OR;
 		r_strbuf_appendf (&op->esil, "%s,%s,|=", F1_RN1(word1), F1_RN2(word1));
@@ -534,6 +531,17 @@ static int v850e0_op(RArchSession *a, RAnalOp *op, ut64 addr, const ut8 *buf, in
 			F1_RN2 (word1), F1_RN1 (word1), F1_RN2 (word1), F1_RN2 (word1), F1_RN2 (word1), F1_RN2 (word1));
 		update_flags (op, -1);
 		break;
+	case V850_SATSUBI:
+		op->type = R_ANAL_OP_TYPE_SUB;
+		{
+			const char *dst = F6_RN2 (word1);
+			const char *src = F6_RN1 (word1);
+			r_strbuf_appendf (&op->esil,
+				"%s,%s,:=,0x%x,%s,-=,31,$o,sat,:=,sat,?{,31,$s,?{,0x7fffffff,%s,:=,}{,0x80000000,%s,:=,},}",
+				src, dst, SEXT_IMM16_32 (word2), dst, dst, dst);
+			update_flags (op, -1);
+		}
+		break;
 	case V850_BCOND:
 	case V850_BCOND2:
 	case V850_BCOND3:
@@ -558,19 +566,28 @@ static int v850e0_op(RArchSession *a, RAnalOp *op, ut64 addr, const ut8 *buf, in
 		break;
 	case V850_BIT_MANIP:
 		{
-		ut8 bitop = word1 >> 14;
-		switch (bitop) {
-		case V850_BIT_CLR1:
-			bitmask = (1 << F8_BIT(word1));
-			r_strbuf_appendf (&op->esil, "%hu,%s,+,[1],%u,&,%hu,%s,+,=[1]", word2, F8_RN1(word1), bitmask, word2, F8_RN1(word1));
-			// TODO: Read the value of the memory byte and set zero flag accordingly!
-			break;
-		case V850_BIT_NOT1:
-			bitmask = (1 << F8_BIT(word1));
-			r_strbuf_appendf (&op->esil, "%hu,%s,+,[1],%u,^,%hu,%s,+,=[1]", word2, F8_RN1(word1), bitmask, word2, F8_RN1(word1));
-			// TODO: Read the value of the memory byte and set zero flag accordingly!
-			break;
-		}
+			ut8 bitop = word1 >> 14;
+			switch (bitop) {
+			case V850_BIT_CLR1:
+				bitmask = (1 << F8_BIT(word1));
+				r_strbuf_appendf (&op->esil,
+					"0%x,%s,+,0xffffffff,&,[1],DUP,0x%x,&,!,z,:=,0x%x,&,0x%x,%s,+,0xffffffff,&,=[1]",
+					SEXT_IMM16_32 (word2), F8_RN1 (word1), bitmask,
+					bitmask ^ 0xff, SEXT_IMM16_32 (word2), F8_RN1 (word1));
+				break;
+			case V850_BIT_NOT1:
+				bitmask = (1 << F8_BIT(word1));
+				r_strbuf_appendf (&op->esil,
+					"0x%x,%s,+,0xffffffff,&,[1],DUP,0x%x,&,!,z,:=,0x%x,^,0x%x,%s,+,0xffffffff,&,=[1]",
+					SEXT_IMM16_32 (word2), F8_RN1 (word1), bitmask,
+					bitmask, SEXT_IMM16_32 (word2), F8_RN1 (word1));
+				break;
+			case V850_BIT_TST1:
+				bitmask = (1 << F8_BIT(word1));
+				r_strbuf_appendf (&op->esil, "0x%x,%s,+,0xffffffff,&,[1],0x%x,&,!,z,:=",
+					SEXT_IMM16_32 (word2), F8_RN1 (word1), bitmask);
+				break;
+			}
 		}
 		break;
 	case V850_EXT1:
@@ -856,24 +873,14 @@ static RList *preludes(RArchSession *as) {
 	return l;
 }
 
-#if 0
-static RList *anal_preludes(RAnal *anal) {
-#define KW(d,ds,m,ms) r_list_append (l, r_search_keyword_new((const ut8*)d,ds,(const ut8*)m, ms, NULL))
-	RList *l = r_list_newf ((RListFree)r_search_keyword_free);
-	KW ("\x80\x07", 2, "\xf0\xff", 2);
-	KW ("\x50\x1a\x63\x0f", 4, "\xf0\xff\xff\x0f", 4);
-	return l;
-}
-#endif
-
 static int archinfo(RArchSession *as, ut32 q) {
 	switch (q) {
-	case R_ANAL_ARCHINFO_ALIGN:
-	case R_ANAL_ARCHINFO_DATA_ALIGN:
+	case R_ARCH_INFO_CODE_ALIGN:
+	case R_ARCH_INFO_DATA_ALIGN:
 		return 2;
-	case R_ANAL_ARCHINFO_MAX_OP_SIZE:
+	case R_ARCH_INFO_MAXOP_SIZE:
 		return 8;
-	case R_ANAL_ARCHINFO_MIN_OP_SIZE:
+	case R_ARCH_INFO_MINOP_SIZE:
 		return 2;
 	}
 	return 0;
@@ -890,10 +897,12 @@ static bool encode(RArchSession *s, RAnalOp *op, ut32 mask) {
 	return 0;
 }
 
-RArchPlugin r_arch_plugin_v850 = {
-	.name = "v850",
-	.desc = "V850 code analysis plugin",
-	.license = "MIT",
+const RArchPlugin r_arch_plugin_v850 = {
+	.meta = {
+		.name = "v850",
+		.desc = "V850 code analysis plugin",
+		.license = "MIT",
+	},
 	.preludes = preludes,
 	.cpus = "e0,0,e,e1,e2,e2v3,e3v5,all",
 	.arch = "v850",

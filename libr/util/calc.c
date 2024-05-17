@@ -222,13 +222,17 @@ static int cin_get(RNum *num, RNumCalc *nc, char *c) {
 		*c = nc->oc;
 		nc->oc = 0;
 	} else {
-		if (!nc->calc_buf || !*nc->calc_buf) {
+		if (R_STR_ISEMPTY (nc->calc_buf)) {
+			nc->calc_i = 0;
+			nc->calc_buf = NULL;
 			return 0;
 		}
 		*c = nc->calc_buf[nc->calc_i];
 		if (*c) {
 			nc->calc_i++;
 		} else {
+			nc->calc_i = 0;
+			nc->calc_buf = NULL;
 			return 0;
 		}
 	}
@@ -354,11 +358,7 @@ static RNumCalcToken get_token(RNum *num, RNumCalc *nc) {
 	default:
 		{
 			int i = 0;
-#define stringValueAppend(x) { \
-	const size_t max = sizeof (nc->string_value) - 1; \
-	if (i < max) { nc->string_value[i++] = x; } \
-	else { nc->string_value[max] = 0; } \
-}
+#define stringValueAppend(x) { const size_t max = sizeof (nc->string_value) - 1; if (i < max) { nc->string_value[i++] = x; } else { nc->string_value[max] = 0; } }
 			stringValueAppend (ch);
 			if (ch == '[') {
 				while (cin_get (num, nc, &ch) && ch != ']') {

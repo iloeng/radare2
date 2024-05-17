@@ -1,10 +1,10 @@
-/* radare - LGPL - Copyright 2013-2022 - pancake */
+/* radare - LGPL - Copyright 2013-2024 - pancake */
 
 #include <r_util.h>
 
 R_API RStrBuf *r_strbuf_new(const char *str) {
 	RStrBuf *s = R_NEW0 (RStrBuf);
-	if (str) {
+	if (s && str) {
 		r_strbuf_set (s, str);
 	}
 	return s;
@@ -93,6 +93,9 @@ R_API bool r_strbuf_reserve(RStrBuf *sb, size_t len) {
 
 R_API bool r_strbuf_setbin(RStrBuf *sb, const ut8 *s, size_t l) {
 	r_return_val_if_fail (sb && s, false);
+	if (l > ST32_MAX) {
+		return false;
+	}
 	if (l >= sizeof (sb->buf)) {
 		char *ptr = sb->ptr;
 		if (!ptr || l + 1 > sb->ptrlen) {
@@ -108,7 +111,9 @@ R_API bool r_strbuf_setbin(RStrBuf *sb, const ut8 *s, size_t l) {
 		ptr[l] = 0;
 	} else {
 		R_FREE (sb->ptr);
-		memcpy (sb->buf, s, l);
+		if (l > 0) {
+			memcpy (sb->buf, s, l);
+		}
 		sb->buf[l] = 0;
 	}
 	sb->len = l;
@@ -224,12 +229,16 @@ R_API bool r_strbuf_prepend(RStrBuf *sb, const char *s) {
 R_API bool r_strbuf_append(RStrBuf *sb, const char *s) {
 	r_return_val_if_fail (sb && s, false);
 
-	int l = strlen (s);
+	size_t l = strlen (s);
 	return r_strbuf_append_n (sb, s, l);
 }
 
 R_API bool r_strbuf_append_n(RStrBuf *sb, const char *s, size_t l) {
 	r_return_val_if_fail (sb && s, false);
+	if (l > ST32_MAX) {
+		R_LOG_WARN ("Negative length used in r_strbuf_append_n");
+		return false;
+	}
 
 	if (sb->weakref) {
 		return false;
@@ -281,13 +290,12 @@ R_API bool r_strbuf_appendf(RStrBuf *sb, const char *fmt, ...) {
 	r_return_val_if_fail (sb && fmt, false);
 
 	va_start (ap, fmt);
-	bool ret = r_strbuf_vappendf (sb, fmt, ap);
+	const bool ret = r_strbuf_vappendf (sb, fmt, ap);
 	va_end (ap);
 	return ret;
 }
 
 R_API bool r_strbuf_vappendf(RStrBuf *sb, const char *fmt, va_list ap) {
-	int ret;
 	va_list ap2;
 	char string[1024];
 
@@ -297,7 +305,7 @@ R_API bool r_strbuf_vappendf(RStrBuf *sb, const char *fmt, va_list ap) {
 		return false;
 	}
 	va_copy (ap2, ap);
-	ret = vsnprintf (string, sizeof (string), fmt, ap);
+	int ret = vsnprintf (string, sizeof (string), fmt, ap);
 	if (ret >= sizeof (string)) {
 		char *p = malloc (ret + 1);
 		if (!p) {
@@ -343,6 +351,11 @@ R_API char *r_strbuf_drain(RStrBuf *sb) {
 	char *ret = drain (sb);
 	free (sb);
 	return ret;
+}
+
+R_API char *r_strbuf_tostring(RStrBuf *sb) {
+	r_return_val_if_fail (sb, NULL);
+	return drain (sb);
 }
 
 R_API char *r_strbuf_drain_nofree(RStrBuf *sb) {
@@ -406,4 +419,10 @@ R_API void r_strbuf_fini(RStrBuf *sb) {
 		sb->len = 0;
 		sb->buf[0] = '\0';
 	}
+}
+
+R_API void r_strbuf_trim(RStrBuf *sb) {
+	char *s = strdup (r_strbuf_get (sb));
+	r_str_trim (s);
+	r_strbuf_set (sb, s);
 }

@@ -1,12 +1,15 @@
 /* radare2 - LGPL - Copyright 2016-2023 - pancake */
 
-#include <r_asm.h>
-#include <r_anal.h>
-#include <xtensa-isa.h>
-
-#include "disas-asm.h"
+#include <r_arch.h>
+#include "gnu/xtensa-isa.h"
+#include "../../include/disas-asm.h"
 
 #define INSN_BUFFER_SIZE 4
+
+typedef struct plugin_data_t {
+	xtensa_insnbuf insn_buffer;
+	xtensa_insnbuf slot_buffer;
+} PluginData;
 
 static int xtensa_buffer_read_memory(bfd_vma memaddr, bfd_byte *myaddr, ut32 length, struct disassemble_info *info) {
 	// TODO honor delta ?
@@ -843,7 +846,7 @@ static void esil_load_relative(xtensa_isa isa, xtensa_opcode opcode, xtensa_form
 	r_strbuf_appendf (
 		&op->esil,
 			"0x%x" 		CM
-			"$$"   		CM
+			"0x%"PFMT64x	CM
 			"3"		CM
 			"+"		CM
 			"0xFFFFFFFC"	CM
@@ -854,6 +857,7 @@ static void esil_load_relative(xtensa_isa isa, xtensa_opcode opcode, xtensa_form
 			"=",
 		// offset
 		offset,
+		op->addr,
 		// data
 		xtensa_regfile_shortname (isa, dst_rf),
 		dst
@@ -1632,7 +1636,7 @@ static void esil_call(xtensa_isa isa, xtensa_opcode opcode,
 			(ut32 *) &imm_offset);
 
 	if (call) {
-		r_strbuf_append(
+		r_strbuf_append (
 			&op->esil,
 			"pc"	CM
 			"a0"	CM
@@ -2003,18 +2007,16 @@ static bool decode(RArchSession *a, RAnalOp *op, RArchDecodeMask mask) {
 	xtensa_format format;
 	int nslots;
 
-	static R_TH_LOCAL xtensa_insnbuf insn_buffer = NULL;
-	static R_TH_LOCAL xtensa_insnbuf slot_buffer = NULL;
-
-	if (!insn_buffer) {
-		insn_buffer = xtensa_insnbuf_alloc (isa);
-		slot_buffer = xtensa_insnbuf_alloc (isa);
+	PluginData *pd = a->data;
+	if (!pd->insn_buffer) {
+		pd->insn_buffer = xtensa_insnbuf_alloc (isa);
+		pd->slot_buffer = xtensa_insnbuf_alloc (isa);
 	}
 
-	memset (insn_buffer, 0,	xtensa_insnbuf_size (isa) * sizeof (xtensa_insnbuf_word));
+	memset (pd->insn_buffer, 0, xtensa_insnbuf_size (isa) * sizeof (xtensa_insnbuf_word));
 
-	xtensa_insnbuf_from_chars (isa, insn_buffer, buffer, len);
-	format = xtensa_format_decode (isa, insn_buffer);
+	xtensa_insnbuf_from_chars (isa, pd->insn_buffer, buffer, len);
+	format = xtensa_format_decode (isa, pd->insn_buffer);
 
 	if (format == XTENSA_UNDEFINED) {
 		return op->size;
@@ -2026,15 +2028,15 @@ static bool decode(RArchSession *a, RAnalOp *op, RArchDecodeMask mask) {
 	}
 
 	for (i = 0; i < nslots; i++) {
-		xtensa_format_get_slot (isa, format, i, insn_buffer, slot_buffer);
-		opcode = xtensa_opcode_decode (isa, format, i, slot_buffer);
+		xtensa_format_get_slot (isa, format, i, pd->insn_buffer, pd->slot_buffer);
+		opcode = xtensa_opcode_decode (isa, format, i, pd->slot_buffer);
 
 		if (opcode == 39) { /* addi */
-			xtensa_check_stack_op (isa, opcode, format, i, slot_buffer, op);
+			xtensa_check_stack_op (isa, opcode, format, i, pd->slot_buffer, op);
 		}
 
 		if (mask & R_ARCH_OP_MASK_ESIL) {
-			analop_esil (isa, opcode, format, i, slot_buffer, op);
+			analop_esil (isa, opcode, format, i, pd->slot_buffer, op);
 		}
 	}
 
@@ -2052,6 +2054,7 @@ static char *regs(RArchSession *as) {
 		"=PC	pc\n"
 		"=BP	a14\n"
 		"=SP	a1\n"
+		"=SN	a1\n"
 		"=A0	a2\n"
 		"=A1	a3\n"
 		"=A2	a4\n"
@@ -2085,18 +2088,50 @@ static char *regs(RArchSession *as) {
 
 
 static int archinfo(RArchSession *as, ut32 q) {
-	return 1;
+	switch (q) {
+	case R_ARCH_INFO_MAXOP_SIZE:
+		return 8;
+	case R_ARCH_INFO_INVOP_SIZE:
+	case R_ARCH_INFO_MINOP_SIZE:
+		return 2;
+	case R_ARCH_INFO_DATA_ALIGN:
+	case R_ARCH_INFO_CODE_ALIGN:
+		return 1;
+	}
+	return 1; // XXX
 }
 
-RArchPlugin r_arch_plugin_xtensa = {
-	.name = "xtensa",
-	.desc = "Xtensa disassembler",
-	.license = "LGPL3",
+static bool init(RArchSession *as) {
+	r_return_val_if_fail (as, false);
+	if (as->data) {
+		R_LOG_WARN ("Already initialized");
+		return false;
+	}
+
+	as->data = R_NEW0 (PluginData);
+	return !!as->data;
+}
+
+static bool fini(RArchSession *as) {
+	r_return_val_if_fail (as, false);
+	R_FREE (as->data);
+	return true;
+}
+
+const RArchPlugin r_arch_plugin_xtensa = {
+	.meta = {
+		.name = "xtensa",
+		.desc = "Xtensa disassembler",
+		.license = "LGPL3",
+	},
 	.endian = R_SYS_ENDIAN_LITTLE | R_SYS_ENDIAN_BIG,
 	.info = archinfo,
 	.arch = "xtensa",
-	.bits = R_SYS_BITS_PACK1 (32), .decode = &decode,
+	.bits = R_SYS_BITS_PACK1 (32),
+	.decode = decode,
 	.regs = regs,
+	.init = init,
+	.fini = fini,
 };
 
 #ifndef R2_PLUGIN_INCORE

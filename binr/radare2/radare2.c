@@ -1,11 +1,10 @@
-/* radare - LGPL - Copyright 2009-2022 - pancake */
+/* radare - LGPL - Copyright 2009-2023 - pancake */
 
 #include <r_main.h>
-#include <r_util.h>
 
 #if EMSCRIPTEN__TODO
 #include <emscripten.h>
-static RCore *core = NULL;
+static R_TH_LOCAL RCore *core = NULL;
 
 void *r2_asmjs_new(const char *cmd) {
 	return r_core_new ();
@@ -59,9 +58,10 @@ static void r2cmd(int in, int out, const char *cmd) {
 	}
 	while (1) {
 		int n = read (in, buf, bufsz);
-		if (n != bufsz) {
+		if (n < 1) {
 			break;
 		}
+		buf[n] = '\0';
 		buf[bufsz - 1] = '\0';
 		int len = strlen ((const char *)buf);
 		n = len;
@@ -101,6 +101,20 @@ int main(int argc, const char **argv) {
 	if (argc > 0 && strstr (argv[0], "r2p")) {
 		return r_main_r2pipe (argc, argv);
 	}
+	char *ea = r_sys_getenv ("R2_ARGS");
+	if (R_STR_ISNOTEMPTY (ea)) {
+		R_LOG_INFO ("Using R2_ARGS: \"%s\"", ea);
+		if (!r_str_startswith (ea, argv[0])) {
+			R_LOG_WARN ("R2_ARGS should start with argv[0]=%s", argv[0]);
+		}
+		char **argv = r_str_argv (ea, &argc);
+		r_sys_setenv ("R2_ARGS", NULL);
+		int res = r_main_radare2 (argc, (const char **)argv);
+		free (ea);
+		free (argv);
+		return res;
+	}
+	free (ea);
 	return r_main_radare2 (argc, argv);
 }
 

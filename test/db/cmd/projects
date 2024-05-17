@@ -1,5 +1,5 @@
 NAME=Resaving maps fails
-FILE=-
+FILE=malloc://0x400
 CMDS=<<EOF
 om 3 0x8000 0x200 0x200 r--
 om 3 0xc000 0x100 0x300 r--
@@ -15,15 +15,15 @@ om*
 rm a.r2
 EOF
 EXPECT=<<EOF
-omu 3 0x00000000 0x00000200 0x00000000 rwx
+omu 3 0x00000000 0x00000400 0x00000000 rwx
 omu 3 0x00008000 0x00000200 0x00000200 r--
 omu 3 0x0000c000 0x00000100 0x00000300 r--
 dos
-omu 3 0x00000000 0x00000200 0x00000000 rwx
+omu 3 0x00000000 0x00000400 0x00000000 rwx
 omu 3 0x00008000 0x00000200 0x00000200 r--
 omu 3 0x0000c000 0x00000100 0x00000300 r--
 tre
-omu 3 0x00000000 0x00000200 0x00000000 rwx
+omu 3 0x00000000 0x00000400 0x00000000 rwx
 omu 3 0x00008000 0x00000200 0x00000200 r--
 omu 3 0x0000c000 0x00000100 0x00000300 r--
 EOF
@@ -71,7 +71,7 @@ EXPECT=<<EOF
             0x100003c14      4155           push r13
             0x100003c16      4154           push r12
             0x100003c18      53             push rbx
-            0x100003c19      4881ec380600.  sub rsp, 0x638
+            0x100003c19      4881ec3806..   sub rsp, 0x638
             0x100003c20      4989f7         mov r15, rsi
             0x100003c23      4189fe         mov r14d, edi
 0x100003c0c
@@ -87,7 +87,7 @@ EXPECT=<<EOF
             0x100003c14      4155           push r13
             0x100003c16      4154           push r12
             0x100003c18      53             push rbx
-            0x100003c19      4881ec380600.  sub rsp, 0x638
+            0x100003c19      4881ec3806..   sub rsp, 0x638
             0x100003c20      4989f7         mov r15, rsi
             0x100003c23      4189fe         mov r14d, edi
  3 fd: 3 +0x00004000 0x100000000 - 0x100007fff r-x fmap.__TEXT
@@ -172,7 +172,7 @@ e dir.projects = .tmp/
 CC "Some other test" @ 0x00404890
 P+ testexp > /dev/null
 cat .tmp/testexp/rc.r2 | grep base64
-rmdir -p .tmp/testexp
+rm -rf .tmp/testexp
 EOF
 EXPECT=<<EOF
 "e bin.str.debase64 = false"
@@ -193,7 +193,8 @@ C- @ 0x00404890
 C- @ 0x00404800
 P project.r2
 cat .tmp/testset/rc.r2 | grep CC
-rmdir -p .tmp/testset
+rm -rf .tmp/testset
+q 0
 EOF
 EXPECT=<<EOF
 CCu base64:IlNlY29uZCBjb21tZW50Ig== @ 0x00404800
@@ -808,12 +809,48 @@ RUN
 NAME=Rename
 FILE=bins/elf/analysis/main
 CMDS=<<EOF
+P-hello
+P-world
 e prj.vc = false
 Ps hello
 Ps world
 EOF
 EXPECT_ERR=<<EOF
+WARN: Relocs has not been applied. Please use `-e bin.relocs.apply=true` or `-e bin.cache=true` next time
+EOF
+EXPECT=
+RUN
+
+NAME=delete memory format with Cf-
+FILE=bins/dmg/src/Hello
+CMDS=<<EOF
+e scr.interactive=false
+P-temp_proj
+e prj.vc=false
+e asm.arch=x86
+e asm.bits=64
+e asm.flags.inline=true
+pd 1
+Cf 1 x
+pd 1
+e scr.interactive=false
+P+temp_proj
+Cf-
+pd 1
+f jeje=0
+e scr.interactive=false
+Ps temp_proj
+e scr.interactive=false
+P temp_proj
+f-orax
+pd 1
 EOF
 EXPECT=<<EOF
+            0x00000000      57             push rdi
+            0x00000000 pf x # size=1
+0x00000000 = 0x6c726f57
+            0x00000000      57             push rdi
+            ;-- jeje, rax, rbx, rcx, rdx, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15, rip, rbp, rflags, rsp:
+            0x00000000      57             push rdi
 EOF
 RUN

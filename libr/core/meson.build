@@ -8,6 +8,7 @@ r_core_sources = [
   'canal.c',
   'carg.c',
   'cbin.c',
+  'cmd_print_list.c',
   'cconfig.c',
   'cio.c',
   'cmd.c',
@@ -46,7 +47,10 @@ r_core_sources = [
   'agraph.c',
   'hack.c',
   'libs.c',
-  #'linux_heap_glibc.c',
+  #'dmh_glibc.c',
+  #'dmh_jemalloc.c',
+  #'dmh_macos.c',
+  #'dmh_windows.c',
   'corelog.c',
   'panels.c',
   'patch.c',
@@ -65,9 +69,10 @@ r_core_sources = [
   'vmenus_graph.c',
   'vmenus_zigns.c',
   'yank.c',
-  join_paths('p','core_a2f.c'),
-  join_paths('p','core_sixref.c'),
-  join_paths('p','core_java.c')
+  'p/core_agD.c',
+  'p/core_a2f.c',
+  'p/core_sixref.c',
+  'p/core_java.c'
 ]
 
 r_core_inc = []

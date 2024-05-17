@@ -1,9 +1,7 @@
-/* radare - LGPL - Copyright 2009-2022 - pancake */
+/* radare - LGPL - Copyright 2009-2023 - pancake */
 
-#include <r_types.h>
-#include <r_util.h>
-#include <r_lib.h>
 #include <r_bin.h>
+#include <r_lib.h>
 
 #include "../arch/p/lua/lua53_parser.c"
 
@@ -26,7 +24,7 @@ static bool check(RBinFile *bf) {
 }
 #endif
 
-static bool check_buffer(RBinFile *bf, RBuffer *b) {
+static bool check(RBinFile *bf, RBuffer *b) {
 	if (r_buf_size (b) > 4) {
 		ut8 buf[4];
 		r_buf_read_at (b, 0, buf, sizeof (buf));
@@ -42,7 +40,7 @@ static bool check_buffer(RBinFile *bf, RBuffer *b) {
 	return false;
 }
 
-static bool load_buffer(RBinFile *bf, void **bin_obj, RBuffer *b, ut64 loadaddr, Sdb *sdb) {
+static bool load(RBinFile *bf, RBuffer *b, ut64 loadaddr) {
 	ut8 *buf = malloc (bf->size);
 	if (!buf) {
 		R_LOG_ERROR ("cannot malloc filesize");
@@ -64,55 +62,46 @@ static bool load_buffer(RBinFile *bf, void **bin_obj, RBuffer *b, ut64 loadaddr,
 
 static void addSection(RList *list, const char *name, ut64 addr, ut32 size, bool isFunc) {
 	RBinSection *bs = R_NEW0 (RBinSection);
-	if (!bs) {
-		return;
+	if (bs) {
+		bs->name = strdup (name);
+		bs->vaddr = bs->paddr = addr;
+		bs->size = bs->vsize = size;
+		bs->add = true;
+		bs->is_data = false;
+		bs->bits = isFunc? 8 * lua53_data.instructionSize: 8;
+		if (bs->bits == 0) {
+			bs->bits = 32;
+		}
+		bs->has_strings = !isFunc;
+		bs->arch = strdup ("lua"); // maybe add bs->cpu or use : to separate arch:cpu
+		// bs->cpu = strdup ("5.4"); // maybe add bs->cpu or use : to separate arch:cpu
+		if (isFunc) {
+			bs->perm = R_PERM_RX;
+		} else {
+			bs->perm = R_PERM_R;
+		}
+		bs->is_segment = true;
+		r_list_append (list, bs);
 	}
-
-	bs->name = strdup (name);
-	bs->vaddr = bs->paddr = addr;
-	bs->size = bs->vsize = size;
-	bs->add = true;
-	bs->is_data = false;
-	bs->bits = isFunc? 8 * lua53_data.instructionSize: 8;
-	if (bs->bits == 0) {
-		bs->bits = 32;
-	}
-	bs->has_strings = !isFunc;
-	bs->arch = strdup ("lua"); // maybe add bs->cpu or use : to separate arch:cpu
-	// bs->cpu = strdup ("5.4"); // maybe add bs->cpu or use : to separate arch:cpu
-	if (isFunc) {
-		bs->perm = R_PERM_RX;
-	} else {
-		bs->perm = R_PERM_R;
-	}
-	bs->is_segment = true;
-	r_list_append (list, bs);
 }
 
 static void addSections(LuaFunction *func, ParseStruct *parseStruct){
-	char *string;
-	if (func->name_size == 0 || func->name_ptr == 0) {
-		string = r_str_newf ("0x%"PFMT64x, func->offset);
-	} else {
-		string = r_str_ndup (func->name_ptr, func->name_size);
-	}
+	char *string = (func->name_size == 0 || func->name_ptr == 0)
+		? r_str_newf ("0x%"PFMT64x, func->offset) : func->name_ptr;
 
-	char sb[R_BIN_SIZEOF_STRINGS + 1];
+	r_strf_buffer (R_BIN_SIZEOF_STRINGS);
 
-	snprintf (sb, sizeof (sb), "header.%s", string);
-	addSection (parseStruct->data, sb, func->offset, func->code_offset - func->offset, false);
-
-	snprintf (sb, sizeof (sb), "code.%s", string);
-	addSection (parseStruct->data, sb, func->code_offset, func->const_offset - func->code_offset, true);	// code section also holds codesize
-
-	snprintf (sb, sizeof (sb), "consts.%s", string);
-	addSection (parseStruct->data, sb, func->const_offset, func->upvalue_offset - func->const_offset, false);
-
-	snprintf (sb, sizeof (sb), "upvalues.%s", string);
-	addSection (parseStruct->data, sb, func->upvalue_offset, func->protos_offset - func->upvalue_offset, false);
-
-	snprintf (sb, sizeof (sb), "debuginfo.%s", string);
-	addSection (parseStruct->data, sb, func->debug_offset, func->offset + func->size - func->debug_offset, false);
+	addSection (parseStruct->data, r_strf ("header.%s", string),
+		func->offset, func->code_offset - func->offset, false);
+	// code section also holds codesize
+	addSection (parseStruct->data, r_strf ("code.%s", string),
+		func->code_offset, func->const_offset - func->code_offset, true);
+	addSection (parseStruct->data, r_strf ("consts.%s", string),
+		func->const_offset, func->upvalue_offset - func->const_offset, false);
+	addSection (parseStruct->data, r_strf ("upvalues.%s", string),
+		func->upvalue_offset, func->protos_offset - func->upvalue_offset, false);
+	addSection (parseStruct->data, r_strf ("debuginfo.%s", string),
+		func->debug_offset, func->offset + func->size - func->debug_offset, false);
 
 	free (string);
 }
@@ -137,12 +126,13 @@ static RList *sections(RBinFile *bf) {
 	if (!parseStruct.data) {
 		return NULL;
 	}
-
-	ut64 headersize = 4 + 1 + 1 + 6 + 5 + bytes[15] + bytes[16] + 1;// header + version + format + stringterminators + sizes + integer + number + upvalues
+	// header + version + format + stringterminators + sizes + integer + number + upvalues
+	ut64 headersize = 4 + 1 + 1 + 6 + 5 + bytes[15] + bytes[16] + 1;
 	addSection (parseStruct.data, "lua-header", 0, headersize, false);
 
 	// parse functions
 	lua53parseFunction (bytes, headersize, sz, 0, &parseStruct);
+	free (bytes);
 #endif
 	return parseStruct.data;
 }
@@ -163,42 +153,33 @@ static void addString(const ut8 *buf, ut64 offset, ut64 length, ParseStruct *par
 }
 
 static void addSymbol(RList *list, char *name, ut64 addr, ut32 size, const char *type) {
-	RBinSymbol *binSymbol = R_NEW0 (RBinSymbol);
-	if (binSymbol) {
-		binSymbol->name = strdup (name);
-		if (!binSymbol->name) {
-			free (binSymbol);
+	RBinSymbol *sym = R_NEW0 (RBinSymbol);
+	if (sym) {
+		sym->name = r_bin_name_new (name);
+		if (!sym->name) {
+			free (sym);
 			return;
 		}
-		binSymbol->vaddr = binSymbol->paddr = addr;
-		binSymbol->size = size;
-		binSymbol->ordinal = 0;
-		binSymbol->type = type;
-		r_list_append (list, binSymbol);
+		sym->vaddr = sym->paddr = addr;
+		sym->size = size;
+		sym->ordinal = 0;
+		sym->type = type;
+		r_list_append (list, sym);
 	}
 }
 
 static void handleFuncSymbol(LuaFunction *func, ParseStruct *parseStruct){
 	RBinSymbol *binSymbol = R_NEW0 (RBinSymbol);
-
 	if (!binSymbol) {
 		return;
 	}
-
 	char *string;
 	if (!func->name_ptr || !func->name_size) {
-		string = malloc (11);
-		sprintf (string, "0x%"PFMT64x, func->offset);
+		string = r_str_newf ("0x%"PFMT64x, func->offset);
 	} else {
-		string = malloc (func->name_size + 1);
-		memcpy (string, func->name_ptr, func->name_size);
-		int i;
-		for (i = 0; i < func->name_size; i++) {
-			if (string[i] == '@') {
-				string[i] = '_';
-			}
-		}
-		string[func->name_size] = '\0';
+		string = r_str_ndup (func->name_ptr, func->name_size);
+		// XXX use RName.filter() or nothing
+		r_str_replace_char (string, '@', '_');
 	}
 	char sb[R_BIN_SIZEOF_STRINGS + 1];
 	snprintf (sb, sizeof (sb), "lineDefined.%s", string);
@@ -289,7 +270,7 @@ static RList *symbols(RBinFile *bf) {
 	addSymbol (list, "upvalues", 17 + bytes[15] + bytes[16], 1, "NUM");
 
 	lua53parseFunction (bytes, headersize, sz, 0, &parseStruct);
-
+	free (bytes);
 	return list;
 }
 
@@ -345,32 +326,30 @@ static RList *entries(RBinFile *bf) {
 	parseStruct.data = NULL;
 
 	parseStruct.data = r_list_new ();
-	if (!parseStruct.data) {
-		free (buf);
-		return NULL;
+	if (parseStruct.data) {
+		lua53parseFunction (buf, headersize, bf->size, 0, &parseStruct);
 	}
-
-	lua53parseFunction (buf, headersize, bf->size, 0, &parseStruct);
-
 	free (buf);
 	return parseStruct.data;
 }
 
 RBinPlugin r_bin_plugin_lua = {
-	.name = "lua",
-	.desc = "Compiled LUA bin plugin (lua 5.3)",
-	.license = "MIT",
-	.author = "pancake",
+	.meta = {
+		.name = "lua",
+		.desc = "Compiled LUA bin plugin (lua 5.3)",
+		.license = "MIT",
+		.author = "pancake",
+	},
 	.sections = &sections,
-	.load_buffer = &load_buffer,
-	.check_buffer = &check_buffer,
+	.load = &load,
+	.check = &check,
 	.symbols = &symbols,
 	.strings = &strings,
 	.info = &info,
 	.entries = &entries,
 };
 
-#ifndef CORELIB
+#ifndef R2_PLUGIN_INCORE
 RLibStruct radare_plugin = {
 	.type = R_LIB_TYPE_BIN,
 	.data = &r_bin_plugin_lua,

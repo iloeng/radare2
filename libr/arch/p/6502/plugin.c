@@ -1,11 +1,14 @@
 /* radare - LGPL - Copyright 2019-2022 - condret, riq, pancake */
 
-/* 6502 info taken from http://unusedino.de/ec64/technical/aay/c64/bchrt651.htm
+/* 6502 info taken from https://unusedino.de/ec64/technical/aay/c64/bchrt651.htm
  *
  * Mnemonics logic based on:
- *	http://homepage.ntlworld.com/cyborgsystems/CS_Main/6502/6502.htm
+ *	https://homepage.ntlworld.com/cyborgsystems/CS_Main/6502/6502.htm
+ *	(archive)
+ *	1 https://web.archive.org/web/20160406122905/https://homepage.ntlworld.com/cyborgsystems/CS_Main/6502/6502.htm
+ *	2 https://github.com/csBlueChip/6502_Programming_Guide
  * and:
- *	http://vice-emu.sourceforge.net/
+ *	https://vice-emu.sourceforge.net/
  */
 
 #include <string.h>
@@ -14,7 +17,7 @@
 #include <r_asm.h>
 #include <r_anal.h>
 #include "../snes/optable.h"
-#include "./6502dis.inc"
+#include "./6502dis.inc.c"
 
 enum {
 	_6502_FLAGS_C = (1 << 0),
@@ -920,6 +923,7 @@ static char *regs(RArchSession *as) {
 	const char *const p =
 		"=PC	pc\n"
 		"=SP	sp\n"
+		"=SN	a\n"
 		"=A0	y\n"
 		"=A1	y\n"
 		"gpr	a	.8	0	0\n"
@@ -961,13 +965,27 @@ static int esil_6502_fini(REsil *esil) {
 #endif
 
 static int archinfo(RArchSession *a, ut32 q) {
-	return 1;
+	switch (q) {
+	case R_ARCH_INFO_MINOP_SIZE:
+		return 1;
+	case R_ARCH_INFO_MAXOP_SIZE:
+		return 3;
+	case R_ARCH_INFO_INVOP_SIZE:
+		return 1;
+	case R_ARCH_INFO_CODE_ALIGN:
+		return 1;
+	case R_ARCH_INFO_DATA_ALIGN:
+		return 1;
+	}
+	return 0;
 }
 
-RArchPlugin r_arch_plugin_6502 = {
-	.name = "6502",
-	.desc = "6502/NES analysis plugin",
-	.license = "LGPL3",
+const RArchPlugin r_arch_plugin_6502 = {
+	.meta = {
+		.name = "6502",
+		.desc = "6502/NES analysis plugin",
+		.license = "LGPL3",
+	},
 	.arch = "6502",
 	.bits = R_SYS_BITS_PACK1 (8),
 	.decode = &_6502_op,

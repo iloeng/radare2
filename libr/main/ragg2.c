@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2011-2022 - pancake */
+/* radare - LGPL - Copyright 2011-2024 - pancake */
 
 #define R_LOG_ORIGIN "ragg2"
 
@@ -11,6 +11,7 @@
 typedef struct {
 	RLib *l;
 	REgg *e;
+	RAnal *a;
 	// TODO flags
 	// bool oneliner;
 	// bool coutput;
@@ -18,39 +19,15 @@ typedef struct {
 	// bool quiet;
 } REggState;
 
-static void __load_plugins(REggState *es);
-
-static REggState *__es_new(void) {
-	REggState *es = R_NEW0 (REggState);
-	if (es) {
-		es->l = r_lib_new (NULL, NULL);
-		es->e = r_egg_new ();
-		__load_plugins (es);
-	}
-	return es;
-}
-
-static void __es_free(REggState *es) {
-	if (es) {
-		r_egg_free (es->e);
-		r_lib_free (es->l);
-		free (es);
-	}
-}
-
 /* egg callback */
 static int __lib_egg_cb(RLibPlugin *pl, void *user, void *data) {
 	REggPlugin *hand = (REggPlugin *)data;
 	REggState *es = (REggState *)user;
-	r_egg_add (es->e, hand);
+	r_egg_plugin_add (es->e, hand);
 	return true;
 }
 
 static void __load_plugins(REggState *es) {
-	if (r_sys_getenv_asbool ("RAGG2_NOPLUGINS")) {
-		return;
-	}
-
 	r_lib_add_handler (es->l, R_LIB_TYPE_EGG, "egg plugins", &__lib_egg_cb, NULL, es);
 
 	char *path = r_sys_getenv (R_LIB_ENV);
@@ -75,6 +52,28 @@ static void __load_plugins(REggState *es) {
 	free (bindingsdir);
 
 	free (path);
+}
+
+static REggState *__es_new(bool load_plugins) {
+	REggState *es = R_NEW0 (REggState);
+	if (es) {
+		es->l = r_lib_new (NULL, NULL);
+		es->e = r_egg_new ();
+		es->a = r_anal_new ();
+		r_anal_bind (es->a, &es->e->rasm->analb);
+		if (load_plugins) {
+			__load_plugins (es);
+		}
+	}
+	return es;
+}
+
+static void __es_free(REggState *es) {
+	if (es) {
+		r_egg_free (es->e);
+		r_lib_free (es->l);
+		free (es);
+	}
 }
 
 static int usage(int v) {
@@ -115,7 +114,8 @@ static int usage(int v) {
 			" -w [off:hex]    patch hexpairs at given offset\n"
 			" -x              execute\n"
 			" -X [hexpairs]   execute rop chain, using the stack provided\n"
-			" -z              output in C string syntax\n");
+			" -z              output in C string syntax\n"
+			"R2_NOPLUGINS=1   do not load any plugin\n");
 	}
 	return 1;
 }
@@ -127,13 +127,13 @@ static void list(REgg *egg) {
 	printf ("shellcodes:\n");
 	r_list_foreach (egg->plugins, iter, p) {
 		if (p->type == R_EGG_PLUGIN_SHELLCODE) {
-			printf ("%10s : %s\n", p->name, p->desc);
+			printf ("%10s : %s\n", p->meta.name, p->meta.desc);
 		}
 	}
 	printf ("encoders:\n");
 	r_list_foreach (egg->plugins, iter, p) {
 		if (p->type == R_EGG_PLUGIN_ENCODER) {
-			printf ("%10s : %s\n", p->name, p->desc);
+			printf ("%10s : %s\n", p->meta.name, p->meta.desc);
 		}
 	}
 }
@@ -219,8 +219,9 @@ R_API int r_main_ragg2(int argc, const char **argv) {
 	if (argc < 2) {
 		return usage (1);
 	}
+	const bool load_plugins = !r_sys_getenv_asbool ("R2_NOPLUGINS");
 
-	REggState *es = __es_new ();
+	REggState *es = __es_new (load_plugins);
 
 	RGetopt opt;
 	r_getopt_init (&opt, argc, argv, "a:b:B:c:C:d:D:e:E:f:Fhi:I:k:Ln:N:o:Op:P:q:rsS:vw:xX:z");
@@ -300,8 +301,10 @@ R_API int r_main_ragg2(int argc, const char **argv) {
 				off = r_num_math (NULL, opt.arg);
 				n = r_num_math (NULL, p + 1);
 				*p = ':';
-				// TODO: honor endianness here
-				r_egg_patch (es->e, off, (const ut8 *)&n, 4);
+				ut8 word[4];
+				r_write_le32 (word, (ut32)n);
+				// TODO: support big endian
+				r_egg_patch (es->e, off, word, sizeof (word));
 			} else {
 				R_LOG_ERROR ("Missing colon in -d");
 			}
@@ -314,7 +317,9 @@ R_API int r_main_ragg2(int argc, const char **argv) {
 				ut64 n, off = r_num_math (NULL, opt.arg);
 				n = r_num_math (NULL, p + 1);
 				// TODO: honor endianness here
-				r_egg_patch (es->e, off, (const ut8 *)&n, 8);
+				ut8 word[8];
+				r_write_le64 (word, n);
+				r_egg_patch (es->e, off, word, sizeof (word));
 			} else {
 				R_LOG_ERROR ("Missing colon in -d");
 			}
@@ -403,7 +408,7 @@ R_API int r_main_ragg2(int argc, const char **argv) {
 		case 'v':
 			free (sequence);
 			__es_free (es);
-			return r_main_version_print ("ragg2");
+			return r_main_version_print ("ragg2", 0);
 		case 'z':
 			show_str = 1;
 			break;

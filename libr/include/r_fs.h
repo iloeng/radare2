@@ -40,6 +40,9 @@ typedef struct r_fs_file_t {
 	ut8 *data;
 	void *ctx;
 	char type;
+	ut32 uid; // owner
+	ut32 gid; // group
+	ut32 perm; // rwx
 	ut64 time;
 	struct r_fs_plugin_t *p;
 	struct r_fs_root_t *root;
@@ -57,10 +60,7 @@ typedef struct r_fs_root_t {
 } RFSRoot;
 
 typedef struct r_fs_plugin_t {
-	const char *name;
-	const char *desc;
-	const char *author;
-	const char *license;
+	RPluginMeta meta;
 	RFSFile* (*slurp)(RFSRoot *root, const char *path);
 	RFSFile* (*open)(RFSRoot *root, const char *path, bool create);
 	bool (*unlink)(RFSRoot *root, const char *path);
@@ -113,7 +113,19 @@ static inline void r_fs_shell_free(RFSShell *s) {
 #define R_FS_FILE_TYPE_REGULAR 'r'
 #define R_FS_FILE_TYPE_DELETED 'x'
 #define R_FS_FILE_TYPE_SPECIAL 's'
+#define R_FS_FILE_TYPE_BLOCK 'b'
+#define R_FS_FILE_TYPE_CHAR 'c'
 #define R_FS_FILE_TYPE_MOUNT 'm'
+
+// symlinked types
+#define R_FS_FILE_TYPE_S_MOUNTPOINT 'M'
+#define R_FS_FILE_TYPE_S_DIRECTORY 'D'
+#define R_FS_FILE_TYPE_S_REGULAR 'R'
+#define R_FS_FILE_TYPE_S_DELETED 'X'
+#define R_FS_FILE_TYPE_S_SPECIAL 'S'
+#define R_FS_FILE_TYPE_S_BLOCK 'B'
+#define R_FS_FILE_TYPE_S_CHAR 'C'
+#define R_FS_FILE_TYPE_S_MOUNT 'M'
 
 typedef int (*RFSPartitionIterator)(void *disk, void *ptr, void *user);
 typedef struct r_fs_partition_type_t {
@@ -136,7 +148,8 @@ R_API RFS *r_fs_new(void);
 R_API void r_fs_free(RFS* fs);
 
 R_API void r_fs_view(RFS* fs, int view);
-R_API void r_fs_add(RFS *fs, RFSPlugin *p);
+R_API bool r_fs_plugin_add(RFS *fs, RFSPlugin *p);
+R_API bool r_fs_plugin_remove(RFS *fs, RFSPlugin *p);
 R_API void r_fs_del(RFS *fs, RFSPlugin *p);
 
 R_API RFSRoot *r_fs_mount(RFS* fs, const char *fstype, const char *path, ut64 delta);

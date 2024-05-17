@@ -124,7 +124,7 @@ static int windbg_stop(RDebug *dbg) {
 
 static bool do_break = false;
 
-static void __break(void *user) {
+static void break_action(void *user) {
 	RDebug *dbg = (RDebug *)user;
 	DbgEngContext *idbg = dbg->user;
 	if (__is_target_kernel (idbg)) {
@@ -137,7 +137,7 @@ static RDebugReasonType windbg_wait(RDebug *dbg, int pid) {
 	DbgEngContext *idbg = dbg->user;
 	r_return_val_if_fail (idbg && idbg->initialized, 0);
 	ULONG Type, ProcessId, ThreadId;
-	r_cons_break_push (__break, dbg);
+	r_cons_break_push (break_action, dbg);
 	const ULONG timeout = __is_target_kernel (idbg) ? INFINITE : TIMEOUT;
 	HRESULT hr;
 	while ((hr = ITHISCALL (dbgCtrl, WaitForEvent, DEBUG_WAIT_DEFAULT, timeout)) == S_FALSE) {
@@ -596,7 +596,7 @@ RList *windbg_pids(RDebug *dbg, int pid) {
 		for (i = 0; i < ids_cnt; i++) {
 			char path[MAX_PATH];
 			if (SUCCEEDED (ITHISCALL (dbgClient, GetRunningProcessDescription,
-				    idbg->server, ids[i], DEBUG_PROC_DESC_DEFAULT,
+					idbg->server, ids[i], DEBUG_PROC_DESC_DEFAULT,
 					path, sizeof (path), NULL, NULL, 0, NULL))) {
 				RDebugPid *pid = r_debug_pid_new (path, ids[i], 0, 'r', 0);
 				r_list_append (list, pid);
@@ -607,12 +607,16 @@ RList *windbg_pids(RDebug *dbg, int pid) {
 }
 
 RDebugPlugin r_debug_plugin_windbg = {
-	.name = "windbg",
-	.license = "LGPL3",
+	.meta = {
+		.name = "windbg",
+		.license = "LGPL3",
+		.author = "pancake",
+		.desc = "comunicate with a windbg",
+	},
 	.bits = R_SYS_BITS_64,
 	.arch = "x86,x64,arm,arm64",
 	.canstep = 1,
-	.init = windbg_init,
+	.init_debugger = windbg_init,
 	.attach = windbg_attach,
 	.detach = windbg_detach,
 	.breakpoint = windbg_breakpoint,

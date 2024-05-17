@@ -1,9 +1,13 @@
 if get_option('enable_libfuzzer')
   targets = [
+    'anal',
     'bin',
+    'bin2',
+    'fs',
     'dwarf',
     'bin_demangle',
     'ia',
+    'cmd',
     'pdb_parse',
     'pkcs7_parse',
     'protobuf_decode',

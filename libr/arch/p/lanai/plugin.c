@@ -1,7 +1,7 @@
 /* radare - LGPL - Copyright 2016-2023 - pancake */
 
 #include <r_arch.h>
-#include "disas-asm.h"
+#include "../../include/disas-asm.h"
 
 static int lanai_buffer_read_memory(bfd_vma memaddr, bfd_byte *myaddr, ut32 length, struct disassemble_info *info) {
 	int delta = (memaddr - info->buffer_vma);
@@ -57,7 +57,7 @@ static bool decode(RArchSession *a, RAnalOp *op, RArchDecodeMask mask) {
 	}
 	r_strbuf_free (sb);
 
-	return op->size;
+	return op->size > 0;
 }
 
 // 32 registers, most of them general purpose, with special treatment for R0 (all zeroes), R1 (all ones), R2 (the program counter), R3 (status register), and some registers allocated for mode/context switching.
@@ -92,14 +92,21 @@ static char *regs(RArchSession *as) {
 	return strdup (p);
 }
 
-RArchPlugin r_arch_plugin_lanai = {
-	.name = "lanai",
+static int info(RArchSession *as, ut32 q) {
+	return 0;
+}
+
+const RArchPlugin r_arch_plugin_lanai = {
+	.meta = {
+		.name = "lanai",
+		.license = "GPL3",
+		.desc = "Myricom's LANAI based on GNU binutils",
+	},
 	.arch = "lanai",
-	.license = "GPL3",
 	.bits = R_SYS_BITS_PACK1 (32),
 	.endian = R_SYS_ENDIAN_BIG,
-	.desc = "Myricom's LANAI based on GNU binutils",
 	.regs = regs,
+	.info = info,
 	.decode = &decode
 };
 

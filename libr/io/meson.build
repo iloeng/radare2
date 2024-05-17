@@ -21,6 +21,8 @@ r_io_sources = [
   'p/io_socket.c',
   'p/io_debug.c',
   'p/io_default.c',
+  'p/io_sysgdb.c',
+  'p/io_dsc.c',
   'p/io_gdb.c',
   'p/io_gprobe.c',
   'p/io_gzip.c',
@@ -28,6 +30,7 @@ r_io_sources = [
   'p/io_ihex.c',
   'p/io_mach.c',
   'p/io_malloc.c',
+  'p/io_cyclic.c',
   'p/io_xattr.c',
   'p/io_xalz.c',
   'p/io_mmap.c',
@@ -71,6 +74,12 @@ r_io_deps = [
   ar_dep,
   pth
 ]
+
+if host_machine.system() == 'haiku'
+  r_io_deps += [
+    cc.find_library('network')
+  ]
+endif
 
 if host_machine.system() == 'linux' or host_machine.system() == 'android'
   r_io_sources += [

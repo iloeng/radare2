@@ -1,4 +1,4 @@
-/* radare2 - BSD - Copyright 2013-2022 - pancake, condret */
+/* radare2 - BSD - Copyright 2013-2024 - pancake, condret */
 
 #include <r_arch.h>
 #include <r_lib.h>
@@ -696,10 +696,12 @@ static bool decode(RArchSession *a, RAnalOp *op, RArchDecodeMask mask) {
 	return op->size;
 }
 
-RArchPlugin r_arch_plugin_amd29k = {
-	.name = "amd29k",
-	.desc = "AMD 29k decoder",
-	.license = "BSD",
+const RArchPlugin r_arch_plugin_amd29k = {
+	.meta = {
+		.name = "amd29k",
+		.desc = "AMD 29k decoder",
+		.license = "BSD",
+	},
 	.arch = "amd29k",
 	.bits = R_SYS_BITS_PACK1 (32),
 	.addr_bits = R_SYS_BITS_PACK1 (32),

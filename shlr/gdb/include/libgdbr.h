@@ -184,7 +184,6 @@ typedef struct libgdbr_t {
 	int remote_type;
 	bool no_ack;
 	bool is_server;
-	R_DEPRECATE bool server_debug; // R2_590 no usages, to be removed
 	bool get_baddr;
 	libgdbr_stop_reason_t stop_reason;
 
@@ -219,7 +218,7 @@ bool gdbr_set_architecture(libgdbr_t *g, int arch, int bits);
  * \param architecture and bit size.
  * \returns a failure code
  */
-const char *gdbr_get_reg_profile(int arch, int bits);
+char *gdbr_get_reg_profile(int arch, int bits);
 
 /*!
  * \brief Function set the gdbr internal registers profile

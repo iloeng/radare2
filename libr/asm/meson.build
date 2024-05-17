@@ -31,9 +31,6 @@ r_asm_inc = [
   platform_inc,
   include_directories(
     join_paths('../../shlr'),
-    join_paths('arch','include'),
-    join_paths('arch'),
-    join_paths('arch','h8300'),
   )
 ]
 
@@ -51,8 +48,10 @@ r_asm = library('r_asm', r_asm_sources,
     r_reg_dep,
     r_flag_dep,
     r_socket_dep,
+    r_esil_dep,
+    r_crypto_dep,
     capstone_dep,
-    java_dep
+    java_dep,
   ],
   install: true,
   implicit_include_directories: false,
@@ -73,6 +72,8 @@ r_asm_static = static_library('r_asm_static', r_asm_sources,
     r_syscall_static_dep,
     r_flag_static_dep,
     r_socket_static_dep,
+    r_esil_static_dep,
+    r_crypto_static_dep,
     capstone_dep,
     java_static_dep
   ],
@@ -97,7 +98,9 @@ pkgconfig_mod.generate(r_asm,
     'r_reg',
     'r_flag',
     'r_arch',
-    'r_socket'
+    'r_socket',
+    'r_esil',
+    'r_crypto',
   ],
   description: 'radare foundation libraries'
 )

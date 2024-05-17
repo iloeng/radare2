@@ -1,5 +1,5 @@
-WASI_SDK=$(HOME)/Downloads/wasi/wasi-sdk-16.0
-WASI_SYSROOT=$(HOME)/Downloads/wasi/wasi-sysroot-16.0
+WASI_SDK=$(HOME)/Downloads/wasi/wasi-sdk-20.0
+WASI_SYSROOT=$(HOME)/Downloads/wasi/wasi-sysroot-20.0
 
 ifeq (${_INCLUDE_MK_GCC_},)
 _INCLUDE_MK_GCC_=1
@@ -16,14 +16,15 @@ ONELIB=0
 CC_AR=$(AR) q ${LIBAR}
 PARTIALLD=$(CC) -nostdlib -Wl,--whole-archive -Wl,--no-entry
 PIC_CFLAGS=-fPIC
+LDFLAGS+=-flto
 CFLAGS+=-MD -DR2__UNIX__=1
 CFLAGS_INCLUDE=-I
 LDFLAGS_LINK=-l
 LDFLAGS_LINKPATH=-L
-CFLAGS_OPT0=-O0
-CFLAGS_OPT1=-O1
-CFLAGS_OPT2=-O2
-CFLAGS_OPT3=-O3
+CFLAGS_OPT0=-Os
+CFLAGS_OPT1=-Os
+CFLAGS_OPT2=-Os
+CFLAGS_OPT3=-Os
 CFLAGS_DEBUG=-g
 
 ifeq ($(OSTYPE),auto)

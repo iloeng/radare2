@@ -239,7 +239,7 @@ R_API RCoreTask *r_core_task_new(RCore *core, bool create_cons, const char *cmd,
 		if (!task->cons_context) {
 			goto hell;
 		}
-		task->cons_context->cmd_depth = core->max_cmd_depth;
+		core->cur_cmd_depth = core->max_cmd_depth;
 	}
 
 	task->id = core->tasks.task_id_next++;
@@ -499,6 +499,7 @@ R_API void r_core_task_enqueue(RCoreTaskScheduler *scheduler, RCoreTask *task) {
 	}
 	r_list_append (scheduler->tasks, task);
 	task->thread = r_th_new (task_run_thread, task, 0);
+	r_th_start (task->thread);
 
 	tasks_lock_leave (scheduler, &old_sigset);
 }

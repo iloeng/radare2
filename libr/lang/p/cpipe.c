@@ -11,16 +11,16 @@ static int lang_cpipe_file(RLangSession *lang, const char *file) {
 	char *a, *cc, *p, name[512];
 	const char *libpath, *libname;
 
-	if (strlen (file) > (sizeof (name)-10)) {
+	if (strlen (file) > (sizeof (name) - 10)) {
 		return false;
 	}
 	if (!strstr (file, ".c")) {
-		sprintf (name, "%s.c", file);
+		snprintf (name, sizeof (name), "%s.c", file);
 	} else {
 		strcpy (name, file);
 	}
 	if (!r_file_exists (name)) {
-		eprintf ("file not found (%s)\n", name);
+		R_LOG_ERROR ("file not found (%s)", name);
 		return false;
 	}
 
@@ -85,11 +85,13 @@ static bool lang_cpipe_run(RLangSession *session, const char *code, int len) {
 }
 
 static RLangPlugin r_lang_plugin_cpipe = {
-	.name = "cpipe",
+	.meta = {
+		.name = "cpipe",
+		.desc = "r2pipe scripting in C",
+		.author = "pancake",
+		.license = "LGPL",
+	},
 	.ext = "c2",
-	.desc = "r2pipe scripting in C",
-	.author = "pancake",
-	.license = "LGPL",
 	.run = lang_cpipe_run,
 	.run_file = (void*)lang_cpipe_file,
 };

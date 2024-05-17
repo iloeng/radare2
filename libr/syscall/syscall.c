@@ -1,10 +1,6 @@
-/* radare - Copyright 2008-2021 - LGPL -- pancake */
+/* radare - Copyright 2008-2024 - LGPL -- pancake */
 
-#include <r_types.h>
-#include <r_util.h>
 #include <r_syscall.h>
-#include <stdio.h>
-#include <string.h>
 
 R_LIB_VERSION (r_syscall);
 
@@ -120,10 +116,18 @@ R_API bool r_syscall_setup(RSyscall *s, const char *arch, int bits, const char *
 	}
 	if (!strcmp (arch, "avr")) {
 		s->sysport = sysport_avr;
-	} else if (!strcmp (os, "darwin") || !strcmp (os, "osx") || !strcmp (os, "macos")) {
+	}
+	if (!strcmp (os, "darwin") || !strcmp (os, "osx") || !strcmp (os, "macos")) {
 		os = "darwin";
+	} else if (!strcmp (os, "android")) {
+		os = "linux";
+		syscall_changed = true;
 	} else if (!strcmp (arch, "x86")) {
 		s->sysport = sysport_x86;
+	}
+	if (r_str_startswith (arch, "arm") && bits == 16 && !strcmp (os, "linux")) {
+	//	syscall_changed = true;
+		bits = 32;
 	}
 
 	if (syscall_changed) {
@@ -152,19 +156,17 @@ R_API bool r_syscall_setup(RSyscall *s, const char *arch, int bits, const char *
 }
 
 R_API RSyscallItem *r_syscall_item_new_from_string(const char *name, const char *s) {
-	RSyscallItem *si;
-	char *o;
 	if (!name || !s) {
 		return NULL;
 	}
-	o = strdup (s);
+	char *o = strdup (s);
 	int cols = r_str_split (o, ',');
 	if (cols < 3) {
 		free (o);
 		return NULL;
 	}
 
-	si = R_NEW0 (RSyscallItem);
+	RSyscallItem *si = R_NEW0 (RSyscallItem);
 	if (!si) {
 		free (o);
 		return NULL;
@@ -228,10 +230,7 @@ R_API RSyscallItem *r_syscall_get(RSyscall *s, int num, int swi) {
 		}
 	}
 	const char *ret2 = sdb_const_get (s->db, ret, 0);
-	if (!ret2) {
-		return NULL;
-	}
-	return r_syscall_item_new_from_string (ret, ret2);
+	return ret2? r_syscall_item_new_from_string (ret, ret2): NULL;
 }
 
 R_API int r_syscall_get_num(RSyscall *s, const char *str) {

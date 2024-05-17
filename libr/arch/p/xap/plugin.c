@@ -212,11 +212,13 @@ static bool decode(RArchSession *as, RAnalOp *op, RArchDecodeMask mask) {
 	return op->size;
 }
 
-RArchPlugin r_arch_plugin_xap = {
-	.name = "xap",
-	.desc = "XAP code analysis plugin",
-	.license = "LGPL3",
-	.author = "pancake",
+const RArchPlugin r_arch_plugin_xap = {
+	.meta = {
+		.name = "xap",
+		.desc = "XAP code analysis plugin",
+		.license = "LGPL3",
+		.author = "pancake",
+	},
 	.arch = "xap",
 	.bits = R_SYS_BITS_PACK1 (16),
 	.endian = R_SYS_ENDIAN_LITTLE,

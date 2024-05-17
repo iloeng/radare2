@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2008-2022 - pancake */
+/* radare - LGPL - Copyright 2008-2023 - pancake */
 
 #ifndef R2_UTIL_H
 #define R2_UTIL_H
@@ -32,16 +32,17 @@ int gettimeofday (struct timeval* p, void* tz);
 #include "r_util/r_signal.h"
 #include "r_util/r_alloc.h"
 #include "r_util/r_rbtree.h"
+#include "r_util/r_xml.h"
 #include "r_util/r_new_rbtree.h"
 #include "r_util/r_intervaltree.h"
 #include "r_util/r_big.h"
+#include "r_util/r_base36.h"
 #include "r_util/r_base64.h"
 #include "r_util/r_base91.h"
 #include "r_util/r_buf.h"
 #include "r_util/r_bitmap.h"
 #include "r_util/r_time.h"
 #include "r_util/r_debruijn.h"
-#include "r_util/r_cache.h"
 #include "r_util/r_ctypes.h"
 #include "r_util/r_file.h"
 #include "r_util/r_hex.h"
@@ -62,7 +63,6 @@ int gettimeofday (struct timeval* p, void* tz);
 #include "r_util/r_spaces.h"
 #include "r_util/r_stack.h"
 #include "r_util/r_str.h"
-#include "r_util/r_ascii_table.h"
 #include "r_util/r_strbuf.h"
 #include "r_util/r_strpool.h"
 #include "r_util/r_str_constpool.h"

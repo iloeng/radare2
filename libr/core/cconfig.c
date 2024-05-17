@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2009-2022 - pancake */
+/* radare - LGPL - Copyright 2009-2024 - pancake */
 
 #include <r_core.h>
 #include <r_types_base.h>
@@ -35,12 +35,8 @@ static void set_options(RConfigNode *node, ...) {
 }
 
 static bool isGdbPlugin(RCore *core) {
-	if (core->io && core->io->desc && core->io->desc->plugin) {
-		if (core->io->desc->plugin->name && !strcmp (core->io->desc->plugin->name, "gdb")) {
-			return true;
-		}
-	}
-	return false;
+	RIOPlugin *plugin = R_UNWRAP4 (core, io, desc, plugin);
+	return plugin && plugin->meta.name && !strcmp (plugin->meta.name, "gdb");
 }
 
 static void print_node_options(RConfigNode *node) {
@@ -118,20 +114,10 @@ fail:
 	return false;
 }
 
-static const char *has_esil(RCore *core, const char *name) {
-	RListIter *iter;
-	RAnalPlugin *h;
-	r_return_val_if_fail (core && core->anal && name, NULL);
-	r_list_foreach (core->anal->plugins, iter, h) {
-		if (h->name && !strcmp (name, h->name)) {
-			return h->esil? "Ae": "A_";
-		}
-	}
-	return "__";
-}
-
 // more copypasta
 bool ranal2_list(RCore *core, const char *arch, int fmt) {
+	return false;
+#if 0
 	int i;
 	const char *feat2, *feat;
 	RAnal *a = core->anal;
@@ -164,7 +150,7 @@ bool ranal2_list(RCore *core, const char *arch, int fmt) {
 			RArch *ai = core->anal->arch;
 			RArchPlugin *arp;
 			r_list_foreach (ai->plugins, iter, arp) {
-				if (arp->cpus && !strcmp (arch, arp->name)) {
+				if (arp->cpus && !strcmp (arch, arp->meta.name)) {
 					char *c = strdup (arp->cpus);
 					int n = r_str_split (c, ',');
 					for (i = 0; i < n; i++) {
@@ -197,7 +183,7 @@ bool ranal2_list(RCore *core, const char *arch, int fmt) {
 			bits = r_strbuf_drain (sb);
 			feat = "__";
 			feat = "_d";
-			feat2 = has_esil (core, h->name);
+			feat2 = "__";
 			if (fmt == 'q') {
 				r_cons_println (h->name);
 			} else if (fmt == 'j') {
@@ -238,6 +224,7 @@ bool ranal2_list(RCore *core, const char *arch, int fmt) {
 		pj_free (pj);
 	}
 	return any;
+#endif
 }
 
 static inline void __setsegoff(RConfig *cfg, const char *asmarch, int asmbits) {
@@ -329,15 +316,6 @@ static bool cb_anal_nonull(void *user, void *data) {
 	return true;
 }
 
-static bool cb_analstrings(void *user, void *data) {
-	RCore *core = (RCore*) user;
-	RConfigNode *node = (RConfigNode*) data;
-	if (node->i_value) {
-		r_config_set_b (core->config, "bin.strings", false);
-	}
-	return true;
-}
-
 static bool cb_anal_ignbithints(void *user, void *data) {
 	RCore *core = (RCore*) user;
 	RConfigNode *node = (RConfigNode*) data;
@@ -381,26 +359,14 @@ static bool cb_analhpskip(void *user, void *data) {
 }
 
 static void update_analarch_options(RCore *core, RConfigNode *node) {
+	// XXX R2_590 - does nothing, but needs testing to prove that
 	RAnalPlugin *h;
 	RListIter *it;
 	if (core && core->anal && node) {
 		r_config_node_purge_options (node);
 		r_list_foreach (core->anal->plugins, it, h) {
-			if (h->name) {
-				SETOPTIONS (node, h->name, NULL);
-			}
-		}
-	}
-}
-
-static void update_archarch_options(RCore *core, RConfigNode *node) {
-	RArchPlugin *h;
-	RListIter *it;
-	if (core && core->anal && core->anal->arch && node) {
-		r_config_node_purge_options (node);
-		r_list_foreach (core->anal->arch->plugins, it, h) {
-			if (h->name) {
-				SETOPTIONS (node, h->name, NULL);
+			if (h->meta.name) {
+				SETOPTIONS (node, h->meta.name, NULL);
 			}
 		}
 	}
@@ -443,10 +409,10 @@ static void update_archdecoder_options(RCore *core, RConfigNode *node) {
 	r_return_if_fail (core && core->anal && core->anal->arch && node);
 	r_config_node_purge_options (node);
 	RListIter *it;
-	RArchPlugin *p;
-	r_list_foreach (core->anal->arch->plugins, it, p) {
-		if (p->name) {
-			SETOPTIONS (node, p->name, NULL);
+	RArchPlugin *ap;
+	r_list_foreach (core->anal->arch->plugins, it, ap) {
+		if (ap->meta.name) {
+			SETOPTIONS (node, ap->meta.name, NULL);
 		}
 	}
 }
@@ -480,10 +446,33 @@ static bool cb_archdecoder_getter(RCore *core, RConfigNode *node) {
 	return true;
 }
 
-static bool cb_archbits(void *user, void *data) {
+static bool cb_arch_platform(void *user, void *data) {
 	RCore *core = (RCore *)user;
 	RConfigNode *node = (RConfigNode *)data;
-	r_return_val_if_fail (node && core && core->anal && core->anal->arch, false);
+	const char *name = node->value;
+	RArch *arch = core->anal->arch;
+	if (strstr (name, "?")) {
+		r_arch_platform_list (arch);
+	} else {
+		if (arch->platform) {
+			char *f = r_arch_platform_unset (arch, arch->platform);
+			r_core_run_script (core, f);
+			free (f);
+			arch->platform = NULL;
+		}
+		char *f = r_arch_platform_set (arch, name);
+		if (f) {
+			r_core_run_script (core, f);
+			free (f);
+		}
+	}
+	return true;
+}
+
+static bool cb_archbits(void *user, void *data) {
+	r_return_val_if_fail (user && data, false);
+	RCore *core = (RCore *)user;
+	RConfigNode *node = (RConfigNode *)data;
 	r_arch_set_bits (core->anal->arch, node->i_value);
 	return true;
 }
@@ -510,53 +499,6 @@ static bool cb_archendian(void *user, void *data) {
 	}
 	return false;
 }
-
-static bool cb_archarch(void *user, void *data) {
-	RCore *core = (RCore *)user;
-	RConfigNode *node = (RConfigNode *)data;
-	if (*node->value == '?') {
-		update_archarch_options (core, node);
-		print_node_options (node);
-		return false;
-	}
-	r_return_val_if_fail (node && core && core->anal && core->anal->arch, false);
-	return core->anal->arch? r_arch_set_arch (core->anal->arch, node->value): true;
-}
-
-static bool cb_archarch_getter(RCore *core, RConfigNode *node) {
-	r_return_val_if_fail (node && core && core->anal && core->anal->arch, false);
-	if (core->anal->arch->cfg && core->anal->arch->cfg->arch) {
-		node->value = strdup (core->anal->arch->cfg->arch);
-	}
-	return true;
-}
-
-#if 0
-static bool cb_archautoselect(void *user, void *data) {
-	RCore *core = (RCore *)user;
-	RConfigNode *node = (RConfigNode *)data;
-	r_return_val_if_fail (node && core && core->anal && core->anal->arch, false);
-	core->anal->arch->autoselect = node->i_value;
-	return true;
-}
-
-static bool cb_analcpu(void *user, void *data) {
-	RCore *core = (RCore *) user;
-	RConfigNode *node = (RConfigNode *) data;
-	if (strstr (node->value, "?")) {
-		ranal2_list (core, r_config_get (core->config, "anal.arch"), node->value[1]);
-	}
-	// r_anal_set_cpu (core->anal, node->value);
-	r_arch_config_set_cpu (core->anal->config, node->value);
-	/* set pcalign */
-	int v = r_anal_archinfo (core->anal, R_ANAL_ARCHINFO_ALIGN);
- 	if (v != -1) {
- 		core->anal->config->pcalign = v;
- 	}
-	r_config_set_i (core->config, "asm.pcalign", (v != -1)? v: 0);
-	return true;
-}
-#endif
 
 static bool cb_analrecont(void *user, void *data) {
 	RCore *core = (RCore*) user;
@@ -625,10 +567,10 @@ static bool cb_scrrainbow(void *user, void *data) {
 	RConfigNode *node = (RConfigNode *) data;
 	if (node->i_value) {
 		core->print->flags |= R_PRINT_FLAGS_RAINBOW;
-		r_core_cmd0 (core, "ecr");
+		r_core_cmd_call (core, "ecr");
 	} else {
 		core->print->flags &= (~R_PRINT_FLAGS_RAINBOW);
-		r_core_cmd0 (core, "ecoo");
+		r_core_cmd_call (core, "ecoo");
 	}
 	r_print_set_flags (core->print, core->print->flags);
 	return true;
@@ -696,7 +638,7 @@ static void update_asmcpu_options(RCore *core, RConfigNode *node) {
 	r_config_node_purge_options (node);
 	RArchPlugin *h;
 	r_list_foreach (core->anal->arch->plugins, iter, h) {
-		if (h->cpus && !strcmp (arch, h->name)) {
+		if (h->cpus && !strcmp (arch, h->meta.name)) {
 			char *c = strdup (h->cpus);
 			int i, n = r_str_split (c, ',');
 			for (i = 0; i < n; i++) {
@@ -710,26 +652,36 @@ static void update_asmcpu_options(RCore *core, RConfigNode *node) {
 		}
 	}
 }
+static void list_cpus(RCore *core) {
+	RArchPlugin *ap = R_UNWRAP5 (core, anal, arch, session, plugin);
+	if (ap && ap->cpus) {
+		char *c = strdup (ap->cpus);
+		int i, n = r_str_split (c, ',');
+		for (i = 0; i < n; i++) {
+			r_cons_println (r_str_word_get0 (c, i));
+		}
+		free (c);
+	}
+}
 
 static bool cb_asmcpu(void *user, void *data) {
-// cb_analcpu (user, data);
 	RCore *core = (RCore *) user;
 	RConfigNode *node = (RConfigNode *) data;
 	if (*node->value == '?') {
+		list_cpus (core);
+#if 0
 		update_asmcpu_options (core, node);
-		// XXX not working const char *asm_arch = core->anal->config->arch;
-		const char *asm_arch = r_config_get (core->config, "asm.arch");
-		/* print verbose help instead of plain option listing */
-		ranal2_list (core, asm_arch, node->value[1]);
+#endif
 		return 0;
 	}
 	r_asm_set_cpu (core->rasm, node->value);
 	r_arch_config_set_cpu (core->rasm->config, node->value);
-	int v = r_anal_archinfo (core->anal, R_ANAL_ARCHINFO_ALIGN);
- 	if (v != -1) {
- 		core->anal->config->pcalign = v;
+	int v = r_anal_archinfo (core->anal, R_ARCH_INFO_CODE_ALIGN);
+ 	if (v >= 0) {
+ 		core->anal->config->codealign = v;
  	}
-	r_config_set_i (core->config, "asm.pcalign", (v != -1)? v: 0);
+	// R2_590 - rename to arch.codealign
+	r_config_set_i (core->config, "asm.codealign", (v != -1)? v: 0);
 	return true;
 }
 
@@ -739,8 +691,8 @@ static void update_asmarch_options(RCore *core, RConfigNode *node) {
 	if (core && node && core->rasm) {
 		r_config_node_purge_options (node);
 		r_list_foreach (core->anal->arch->plugins, iter, h) {
-			if (h->name) {
-				SETOPTIONS (node, h->name, NULL);
+			if (h->meta.name) {
+				SETOPTIONS (node, h->meta.name, NULL);
 			}
 		}
 	}
@@ -794,38 +746,6 @@ static bool cb_asmarch(void *user, void *data) {
 	}
 	//we should strdup here otherwise will crash if any r_config_set
 	//free the old value
-	char *asm_cpu = strdup (r_config_get (core->config, "asm.cpu"));
-#if 0
-	if (core->rasm->cur) {
-		const char *new_asm_cpu = core->rasm->config->cpu;
-		if (R_STR_ISNOTEMPTY (new_asm_cpu)) {
-			char *nac = strdup (new_asm_cpu);
-			char *comma = strchr (nac, ',');
-			if (comma) {
-				if (!*asm_cpu || (*asm_cpu && !strstr (nac, asm_cpu))) {
-					*comma = 0;
-					r_config_set (core->config, "asm.cpu", nac);
-				}
-			}
-			free (nac);
-		} else {
-			// TODO: set to '' only if the new arch plugin doesnt handle
-			// the given asm.cpu setup, but we can ignore for now
-			// r_config_set (core->config, "asm.cpu", "");
-		}
-		bits = core->rasm->config->bits;
-		if (8 & bits) {
-			bits = 8;
-		} else if (16 & bits) {
-			bits = 16;
-		} else if (32 & bits) {
-			bits = 32;
-		} else {
-			bits = 64;
-		}
-		update_asmbits_options (core, r_config_node_get (core->config, "asm.bits"));
-	}
-#endif
 	snprintf (asmparser, sizeof (asmparser), "%s.pseudo", node->value);
 	r_config_set (core->config, "asm.parser", asmparser);
 
@@ -851,7 +771,7 @@ static bool cb_asmarch(void *user, void *data) {
 			free (s);
 		}
 	}
-	// set pcalign
+	// set codealign
 	if (core->anal) {
 		const char *asmcpu = r_config_get (core->config, "asm.cpu");
 		const char *asmos = r_config_get (core->config, "asm.os");
@@ -867,28 +787,27 @@ static bool cb_asmarch(void *user, void *data) {
 	// set a default endianness
 	int bigbin = r_bin_is_big_endian (core->bin);
 	if (bigbin == -1 /* error: no endianness detected in binary */) {
-		bigbin = r_config_get_i (core->config, "cfg.bigendian");
+		bigbin = r_config_get_b (core->config, "cfg.bigendian");
 	}
 
 	// try to set endian of RAsm to match binary
 	r_asm_set_big_endian (core->rasm, bigbin);
 
-	r_asm_set_cpu (core->rasm, asm_cpu);
-	free (asm_cpu);
 	RConfigNode *asmcpu = r_config_node_get (core->config, "asm.cpu");
 	if (asmcpu) {
+		r_asm_set_cpu (core->rasm, asmcpu->value);
 		update_asmcpu_options (core, asmcpu);
 	}
 	{
-		int v = r_anal_archinfo (core->anal, R_ANAL_ARCHINFO_ALIGN);
-		r_config_set_i (core->config, "asm.pcalign", (v != -1)? v: 0);
+		int v = r_anal_archinfo (core->anal, R_ARCH_INFO_CODE_ALIGN);
+		r_config_set_i (core->config, "asm.codealign", (v != -1)? v: 0);
 	}
 	/* reload types and cc info */
 	// changing asm.arch changes anal.arch
 	// changing anal.arch sets types db
 	// so ressetting is redundant and may lead to bugs
-	// 1 case this is usefull is when sdb_types is null
-	if (!core->anal || !core->anal->sdb_types) {
+	// 1 case this is useful is when sdb_types is null
+	if (!core->anal->sdb_types) {
 		r_core_anal_type_init (core);
 	}
 	r_core_anal_cc_init (core);
@@ -932,45 +851,33 @@ static bool cb_asmbits(void *user, void *data) {
 	}
 	if (bits > 0) {
 		ret = r_asm_set_bits (core->rasm, bits);
-#if 0
-		if (!ret) {
-			RAsmPlugin *h = core->rasm->cur;
-			if (!h) {
-				// r_asm_use (core->rasm, R_SYS_ARCH);
-				//	R_LOG_ERROR ("e asm.bits: Cannot set value, no plugins defined yet");
-				ret = true;
-			}
-			// else { R_LOG_ERROR ("Cannot set bits %d to '%s'", bits, h->name); }
-		}
-#endif
 		if (!r_anal_set_bits (core->anal, bits)) {
 			R_LOG_ERROR ("asm.arch: Cannot setup '%d' bits analysis engine", bits);
 			ret = false;
 		}
 	}
-	if (core->dbg && core->anal && core->anal->cur) {
-		r_debug_set_arch (core->dbg, core->anal->config->arch, bits);
-		const bool load_from_debug = r_config_get_b (core->config, "cfg.debug");
-		if (load_from_debug) {
-			if (core->dbg->h && core->dbg->h->reg_profile) {
+	r_debug_set_arch (core->dbg, core->anal->config->arch, bits);
+	const bool load_from_debug = r_config_get_b (core->config, "cfg.debug");
+	if (load_from_debug) {
+		RDebugPlugin *plugin = R_UNWRAP3 (core->dbg, current, plugin);
+		if (plugin && plugin->reg_profile) {
 // XXX. that should depend on the plugin, not the host os
 #if R2__WINDOWS__
 #if !defined(_WIN64)
-				core->dbg->bits = R_SYS_BITS_32;
+			core->dbg->bits = R_SYS_BITS_32;
 #else
-				core->dbg->bits = R_SYS_BITS_64;
+			core->dbg->bits = R_SYS_BITS_64;
 #endif
 #endif
-				char *rp = core->dbg->h->reg_profile (core->dbg);
-				if (rp) {
-					r_reg_set_profile_string (core->dbg->reg, rp);
-					r_reg_set_profile_string (core->anal->reg, rp);
-					free (rp);
-				}
+			char *rp = plugin->reg_profile (core->dbg);
+			if (rp) {
+				r_reg_set_profile_string (core->dbg->reg, rp);
+				r_reg_set_profile_string (core->anal->reg, rp);
+				free (rp);
 			}
-		} else {
-			(void)r_anal_set_reg_profile (core->anal, NULL);
 		}
+	} else {
+		(void)r_anal_set_reg_profile (core->anal, NULL);
 	}
 	r_core_anal_cc_init (core);
 	const char *asmos = r_config_get (core->config, "asm.os");
@@ -986,9 +893,9 @@ static bool cb_asmbits(void *user, void *data) {
 			r_bp_use (core->dbg->bp, asmarch, core->anal->config->bits);
 			r_config_set_i (core->config, "dbg.bpsize", r_bp_size (core->dbg->bp));
 		}
-		/* set pcalign */
-		int v = r_anal_archinfo (core->anal, R_ANAL_ARCHINFO_ALIGN);
-		r_config_set_i (core->config, "asm.pcalign", (v != -1)? v: 0);
+		/* set codealign */
+		int v = r_anal_archinfo (core->anal, R_ARCH_INFO_CODE_ALIGN);
+		r_config_set_i (core->config, "asm.codealign", (v != -1)? v: 0);
 	}
 	return ret;
 }
@@ -1066,10 +973,6 @@ static bool cb_jsonencoding_numbers(void *user, void *data) {
 	return true;
 }
 
-static bool cb_asm_armimm(void *user, void *data) {	//TODO: Remove this for 5.8.
-	return true;
-}
-
 static bool cb_asm_invhex(void *user, void *data) {
 	RCore *core = (RCore *) user;
 	RConfigNode *node = (RConfigNode *) data;
@@ -1077,21 +980,21 @@ static bool cb_asm_invhex(void *user, void *data) {
 	return true;
 }
 
-static bool cb_asm_pcalign(void *user, void *data) {
+static bool cb_asm_codealign(void *user, void *data) {
 	RCore *core = (RCore *) user;
 	RConfigNode *node = (RConfigNode *) data;
 	int align = node->i_value;
 	if (align < 0) {
 		align = 0;
 	}
-	core->anal->config->pcalign = align;
+	core->anal->config->codealign = align;
 	return true;
 }
 
 static bool cb_asmos(void *user, void *data) {
 	RCore *core = (RCore*) user;
 	int asmbits = r_config_get_i (core->config, "asm.bits");
-	RConfigNode *asmarch, *node = (RConfigNode*) data;
+	RConfigNode *node = (RConfigNode*) data;
 
 	if (*node->value == '?') {
 		print_node_options (node);
@@ -1101,7 +1004,7 @@ static bool cb_asmos(void *user, void *data) {
 		free (node->value);
 		node->value = strdup (R_SYS_OS);
 	}
-	asmarch = r_config_node_get (core->config, "asm.arch");
+	RConfigNode *asmarch = r_config_node_get (core->config, "asm.arch");
 	if (asmarch) {
 		const char *asmcpu = r_config_get (core->config, "asm.cpu");
 		r_syscall_setup (core->anal->syscall, asmarch->value, core->anal->config->bits, asmcpu, node->value);
@@ -1237,6 +1140,13 @@ static bool cb_usextr(void *user, void *data) {
 	return true;
 }
 
+static bool cb_binlimit(void *user, void *data) {
+	RCore *core = (RCore*) user;
+	RConfigNode *node = (RConfigNode*) data;
+	core->bin->limit = node->i_value;
+	return true;
+}
+
 static bool cb_strpurge(void *user, void *data) {
 	RCore *core = (RCore*) user;
 	RConfigNode *node = (RConfigNode*) data;
@@ -1341,14 +1251,15 @@ static bool cb_dirzigns(void *user, void *data) {
 static bool cb_bigendian(void *user, void *data) {
 	RCore *core = (RCore *) user;
 	RConfigNode *node = (RConfigNode *) data;
-	core->rasm->config->endian = node->i_value ? R_SYS_ENDIAN_BIG: R_SYS_ENDIAN_NONE;
-	// Try to set endian based on preference, restrict by RAsmPlugin
+	// bp, asm, arch, anal, should have a single RArchConfig instance
+	int endianType = node->i_value ? R_SYS_ENDIAN_BIG: R_SYS_ENDIAN_NONE;
 	bool isbig = r_asm_set_big_endian (core->rasm, node->i_value);
-	// the big endian should also be assigned to dbg->bp->endian
 	if (core->dbg && core->dbg->bp) {
 		core->dbg->bp->endian = isbig;
 	}
-	// core->rasm->config->endian = node->i_value ? R_SYS_ENDIAN_BIG: R_SYS_ENDIAN_NONE;
+
+	core->rasm->config->endian = endianType;
+	r_arch_set_endian (core->anal->arch, endianType);
 	return true;
 }
 
@@ -1491,8 +1402,18 @@ static bool cb_dirsrc(void *user, void *data) {
 static bool cb_cfgsanbox_grain(void *user, void *data) {
 	RConfigNode *node = (RConfigNode*) data;
 	if (strstr (node->value, "?")) {
-		eprintf ("Usage: comma separated grain types to be masked out by the sandbox.\n");
-		eprintf ("all, none, disk, files, exec, socket, exec\n");
+		static RCoreHelpMessage help_msg_grain = {
+			"Usage:", "e cfg.sandbox.grain=arg[,arg...]", "set grain types to mask out",
+			"Grain types:", "", "",
+			"", "all", "",
+			"", "none", "",
+			"", "disk", "",
+			"", "files", "",
+			"", "exec", "",
+			"", "socket", "",
+			NULL
+		};
+		r_core_cmd_help ((RCore *)user, help_msg_grain);
 		return false;
 	}
 	int gt = R_SANDBOX_GRAIN_NONE;
@@ -1568,9 +1489,9 @@ static bool cb_cmdpdc(void *user, void *data) {
 		RListIter *iter;
 		RCorePlugin *cp;
 		r_list_foreach (core->rcmd->plist, iter, cp) {
-			if (!strcmp (cp->name, "r2retdec")) {
+			if (!strcmp (cp->meta.name, "r2retdec")) {
 				r_cons_printf ("pdz\n");
-			} else if (!strcmp (cp->name, "r2ghidra")) {
+			} else if (!strcmp (cp->meta.name, "r2ghidra")) {
 				r_cons_printf ("pdg\n");
 			}
 		}
@@ -1620,6 +1541,7 @@ static bool cb_scr_color_ophex(void *user, void *data) {
 	} else {
 		core->print->flags &= (~R_PRINT_FLAGS_COLOROP);
 	}
+	r_config_set_b (core->config, "log.color", node->i_value);
 	return true;
 }
 
@@ -1652,6 +1574,16 @@ static bool cb_color_getter(void *user, RConfigNode *node) {
 	if (!node->value || strcmp (node->value, buf) != 0) {
 		free (node->value);
 		node->value = strdup (buf);
+	}
+	return true;
+}
+
+static bool cb_reloff(void *user, void *data) {
+	// RCore *core = (RCore *) user;
+	RConfigNode *node = (RConfigNode *) data;
+	if (strchr (node->value, '?')) {
+		r_cons_printf ("func\nflag\nmaps\ndmap\nfmap\nsect\nsymb\nlibs\nfile\n");
+		return false;
 	}
 	return true;
 }
@@ -1858,11 +1790,21 @@ static bool cb_dbgbackend(void *user, void *data) {
 		r_debug_plugin_list (core->dbg, 'q');
 		return false;
 	}
+	// TODO: probably not necessary
 	if (!strcmp (node->value, "bf")) {
-		// hack
 		r_config_set (core->config, "asm.arch", "bf");
 	}
-	r_debug_use (core->dbg, node->value);
+	if (r_debug_use (core->dbg, node->value)) {
+		RDebugPlugin *plugin = R_UNWRAP3 (core->dbg, current, plugin);
+		if (plugin) {
+			const char *name = plugin->meta.name;
+			// cmd_aei (core);
+			free (node->value);
+			node->value = strdup (name);
+		}
+	} else {
+		R_LOG_ERROR ("Cannot find a valid debug plugin");
+	}
 	return true;
 }
 
@@ -1977,6 +1919,13 @@ static bool cb_io_unalloc_ch(void *user, void *data) {
 	RCore *core = (RCore *) user;
 	RConfigNode *node = (RConfigNode *) data;
 	core->print->io_unalloc_ch = *node->value ? node->value[0] : ' ';
+	return true;
+}
+
+static bool cb_io_overlay(void *user, void *data) {
+	RCore *core = (RCore *) user;
+	RConfigNode *node = (RConfigNode *) data;
+	core->io->overlay = node->i_value;
 	return true;
 }
 
@@ -2233,7 +2182,7 @@ static bool cb_cmddepth(void *user, void *data) {
 	RCore *core = (RCore *)user;
 	int c = R_MAX (((RConfigNode*)data)->i_value, 0);
 	core->max_cmd_depth = c;
-	core->cons->context->cmd_depth = c;
+	core->cur_cmd_depth = c;
 	return true;
 }
 
@@ -2261,11 +2210,7 @@ static bool cb_search_kwidx(void *user, void *data) {
 static bool cb_io_cache_mode(void *user, void *data) {
 	RCore *core = (RCore *)user;
 	RConfigNode *node = (RConfigNode *)data;
-	if (node->i_value) {
-		core->io->cachemode = true;
-	} else {
-		core->io->cachemode = false;
-	}
+	core->io->cachemode = node->i_value;
 	return true;
 }
 
@@ -2275,13 +2220,14 @@ static bool cb_io_cache_nodup(void *user, void *data) {
 	core->io->nodup = node->i_value;
 	return true;
 }
+
 static bool cb_io_cache_read(void *user, void *data) {
 	RCore *core = (RCore *)user;
 	RConfigNode *node = (RConfigNode *)data;
 	if (node->i_value) {
-		core->io->cached |= R_PERM_R;
+		core->io->cache.mode |= R_PERM_R;
 	} else {
-		core->io->cached &= ~R_PERM_R;
+		core->io->cache.mode &= ~R_PERM_R;
 	}
 	return true;
 }
@@ -2290,16 +2236,21 @@ static bool cb_io_cache_write(void *user, void *data) {
 	RCore *core = (RCore *)user;
 	RConfigNode *node = (RConfigNode *)data;
 	if (node->i_value) {
-		core->io->cached |= R_PERM_W;
+		core->io->cache.mode |= R_PERM_W;
 	} else {
-		core->io->cached &= ~R_PERM_W;
+		core->io->cache.mode &= ~R_PERM_W;
 	}
 	return true;
 }
 
 static bool cb_io_cache(void *user, void *data) {
-	(void)cb_io_cache_read (user, data);
-	(void)cb_io_cache_write (user, data);
+	RCore *core = (RCore *)user;
+	RConfigNode *node = (RConfigNode *)data;
+	if (node->i_value) {
+		core->io->cache.mode |= R_PERM_X;
+	} else {
+		core->io->cache.mode &= ~R_PERM_X;
+	}
 	return true;
 }
 
@@ -2388,7 +2339,7 @@ static bool cb_pager(void *user, void *data) {
 	RCore *core = (RCore *) user;
 	RConfigNode *node = (RConfigNode *) data;
 	if (*node->value == '?') {
-		eprintf ("Usage: scr.pager must be '..' for internal less, or the path to a program in $PATH\n");
+		R_LOG_INFO ("scr.pager must be '..' for internal less, or the path to a program in $PATH");
 		return false;
 	}
 	/* Let cons know we have a new pager. */
@@ -2421,7 +2372,7 @@ static bool cb_scrtheme(void* user, void* data) {
 	RConfigNode *node = (RConfigNode*) data;
 	if (*node->value) {
 		if (*node->value == '?') {
-			r_core_cmd0 (core, "eco");
+			r_core_cmd_call (core, "eco");
 		} else {
 			r_core_cmdf (core, "'eco %s", node->value);
 		}
@@ -2446,6 +2397,12 @@ static bool cb_scroptimize(void* user, void* data) {
 	return true;
 }
 
+static bool cb_scrtimeout(void* user, void* data) {
+	RConfigNode *node = (RConfigNode*) data;
+	r_cons_break_timeout (node->i_value);
+	return true;
+}
+
 static bool cb_scrcolumns(void* user, void* data) {
 	RConfigNode *node = (RConfigNode*) data;
 	RCore *core = (RCore*) user;
@@ -2465,6 +2422,7 @@ static bool cb_scrfgets(void* user, void* data) {
 
 static bool cb_scrhtml(void *user, void *data) {
 	RConfigNode *node = (RConfigNode *) data;
+	r_cons_context ()->was_html = r_cons_context ()->is_html;
 	r_cons_context ()->is_html = node->i_value;
 	// TODO: control error and restore old value (return false?) show errormsg?
 	return true;
@@ -2562,7 +2520,7 @@ static bool cb_scrstrconv(void *user, void *data) {
 		}
 		return false;
 	} else {
-		free ((char *)core->print->strconv_mode);
+		free (core->print->strconv_mode);
 		core->print->strconv_mode = strdup (node->value);
 	}
 	return true;
@@ -2627,7 +2585,11 @@ static bool cb_scrnkey(void *user, void *data) {
 
 static bool cb_scr_demo(void *user, void *data) {
 	RConfigNode *node = (RConfigNode *) data;
-	r_cons_singleton ()->context->demo = node->i_value;
+	RCons *cons = r_cons_singleton ();
+	cons->context->demo = node->i_value;
+	if (cons->line) {
+		cons->line->demo = node->i_value;
+	}
 	return true;
 }
 
@@ -2720,7 +2682,7 @@ static bool cb_consbreak(void *user, void *data) {
 	return true;
 }
 
-static bool cb_teefile(void *user, void *data) {
+static bool cb_config_file_output(void *user, void *data) {
 	RConfigNode *node = (RConfigNode *) data;
 	r_cons_singleton ()->teefile = node->value;
 	return true;
@@ -2928,7 +2890,7 @@ static bool cb_binmaxstr(void *user, void *data) {
 	if (core->bin) {
 		int v = node->i_value;
 		if (v < 1) {
-			v = 4; // HACK
+			v = 0; // HACK
 		}
 		core->bin->maxstrlen = v;
 		r_bin_reset_strings (core->bin);
@@ -2958,8 +2920,9 @@ static bool cb_searchin(void *user, void *data) {
 	if (*node->value == '?') {
 		if (strlen (node->value) > 1 && node->value[1] == '?') {
 			r_cons_printf ("Valid values for search.in (depends on .from/.to and io.va):\n"
-			"raw                search in raw io (ignoring bounds)\n"
-			"flag               find boundaries on flag in current offset bigger than 1 byte\n"
+			"range              search between .from/.to boundaries\n"
+			"flag               find boundaries in ranges defined by flags larger than 1 byte\n"
+			"flag:[glob]        find boundaries in flags matching given glob and larger than 1 byte\n"
 			"block              search in the current block\n"
 			"io.map             search in current map\n"
 			"io.maps            search in all maps\n"
@@ -3003,7 +2966,7 @@ static bool cb_dirpfx(RCore *core, RConfigNode *node) {
 static bool cb_analsyscc(RCore *core, RConfigNode *node) {
 	if (core && core->anal) {
 		if (*node->value == '?') {
-			r_core_cmd0 (core, "afcl");
+			r_core_cmd_call (core, "afcl");
 			return false;
 		}
 		r_anal_set_syscc_default (core->anal, node->value);
@@ -3024,7 +2987,7 @@ static bool cb_analcc(RCore *core, RConfigNode *node) {
 	if (core && core->anal) {
 		node->getter = (RConfigCallback)cb_analcc_getter;
 		if (*node->value == '?') {
-			r_core_cmd0 (core, "afcl");
+			r_core_cmd_call (core, "afcl");
 			return false;
 		}
 		r_anal_set_cc_default (core->anal, node->value);
@@ -3033,15 +2996,16 @@ static bool cb_analcc(RCore *core, RConfigNode *node) {
 }
 
 static bool cb_anal_roregs(RCore *core, RConfigNode *node) {
-	if (core && core->anal && core->anal->reg) {
-		r_list_free (core->anal->reg->roregs);
-		core->anal->reg->roregs = r_str_split_duplist (node->value, ",", true);
-	}
+	r_return_val_if_fail (core && core->anal && core->anal->reg, false);
+	r_reg_ro_reset (core->anal->reg, node->value);
 	return true;
 }
 
 static bool cb_anal_gp(RCore *core, RConfigNode *node) {
-	core->anal->gp = node->i_value;
+	ut64 gpv = node->i_value;
+	core->anal->gp = gpv;
+	r_reg_setv (core->anal->reg, "gp", gpv);
+	core->anal->config->gp = gpv;
 	return true;
 }
 
@@ -3075,6 +3039,12 @@ static bool cb_anal_limits(void *user, RConfigNode *node) {
 static bool cb_anal_noret_refs(void *user, RConfigNode *node) {
 	RCore *core = (RCore*)user;
 	core->anal->opt.recursive_noreturn = node->i_value;
+	return 1;
+}
+
+static bool cb_anal_slow(void *user, RConfigNode *node) {
+	RCore *core = (RCore*)user;
+	core->anal->opt.slow = node->i_value;
 	return 1;
 }
 
@@ -3242,41 +3212,61 @@ static bool cb_malloc(void *user, void *data) {
  	RCore *core = (RCore*) user;
  	RConfigNode *node = (RConfigNode*) data;
  	if (node->value) {
- 		if (!strcmp ("jemalloc", node->value) || !strcmp ("glibc", node->value)) {
-			if (core->dbg) {
-				core->dbg->malloc = data;
+		const char *valid[] = {
+			"glibc",
+			"macos",
+			"windows",
+			"jemalloc",
+			NULL
+		};
+		const char *nv = node->value;
+		if (core->dbg) {
+			int i;
+			for (i = 0; valid[i]; i++) {
+				if (!strcmp (valid[i], nv)) {
+					core->dbg->malloc = data;
+				}
 			}
- 		}
- 	}
+		}
+	}
 	return true;
 }
 
-static bool cb_log_config_level(void *coreptr, void *nodeptr) {
+static bool cb_config_log_level(void *coreptr, void *nodeptr) {
 	RConfigNode *node = (RConfigNode *)nodeptr;
+	if (!strcmp (node->value, "?")) {
+		r_cons_printf ("0 - fatal\n");
+		r_cons_printf ("1 - error\n");
+		r_cons_printf ("2 - info\n");
+		r_cons_printf ("3 - warn\n");
+		r_cons_printf ("4 - todo\n");
+		r_cons_printf ("5 - debug\n");
+		return false;
+	}
 	r_log_set_level (node->i_value);
 	return true;
 }
 
-static bool cb_log_config_traplevel(void *coreptr, void *nodeptr) {
+static bool cb_config_log_traplevel(void *coreptr, void *nodeptr) {
 	RConfigNode *node = (RConfigNode *)nodeptr;
 	r_log_set_traplevel (node->i_value);
 	return true;
 }
 
-static bool cb_log_config_ts(void *coreptr, void *nodeptr) {
+static bool cb_config_log_ts(void *coreptr, void *nodeptr) {
 	RConfigNode *node = (RConfigNode *)nodeptr;
 	r_log_show_ts (node->i_value);
 	return true;
 }
 
-static bool cb_log_config_filter(void *coreptr, void *nodeptr) {
+static bool cb_config_log_filter(void *coreptr, void *nodeptr) {
 	RConfigNode *node = (RConfigNode *)nodeptr;
 	const char *value = node->value;
 	r_log_set_filter (value);
 	return true;
 }
 
-static bool cb_log_config_file(void *coreptr, void *nodeptr) {
+static bool cb_config_log_file(void *coreptr, void *nodeptr) {
 	RConfigNode *node = (RConfigNode *)nodeptr;
 	const char *value = node->value;
 	r_log_set_file (value);
@@ -3295,13 +3285,37 @@ static bool cb_log_source(void *coreptr, void *nodeptr) {
 	return true;
 }
 
-static bool cb_log_config_colors(void *coreptr, void *nodeptr) {
+static bool cb_config_log_colors(void *coreptr, void *nodeptr) {
 	RConfigNode *node = (RConfigNode *)nodeptr;
 	r_log_set_colors (r_str_is_true (node->value));
 	return true;
 }
 
-static bool cb_log_config_quiet(void *coreptr, void *nodeptr) {
+static bool cb_log_cons(void *user, int level, const char *origin, const char *msg) {
+	if (!msg) {
+		// log level doesn't match
+		return false;
+	}
+	const char *levelstr = r_log_level_tostring (level);
+	const char *originstr = origin? origin: "";
+	r_cons_printf ("%s: [%s] %s\n", levelstr, originstr, msg);
+	return true;
+}
+
+static bool cb_config_log_cons(void *coreptr, void *nodeptr) {
+	RCore *core = (RCore*)coreptr;
+	RConfigNode *node = (RConfigNode *)nodeptr;
+	if (r_str_is_true (node->value)) {
+		r_config_set_b (core->config, "log.quiet", true);
+		r_log_add_callback (cb_log_cons, NULL);
+	} else {
+		r_config_set_b (core->config, "log.quiet", false);
+		r_log_del_callback (cb_log_cons);
+	}
+	return true;
+}
+
+static bool cb_config_log_quiet(void *coreptr, void *nodeptr) {
 	RConfigNode *node = (RConfigNode *)nodeptr;
 	r_log_set_quiet (r_str_is_true (node->value));
 	return true;
@@ -3325,18 +3339,18 @@ static bool cb_dbg_verbose(void *user, void *data) {
 
 static bool cb_prjvctype(void *user, void *data) {
 	RConfigNode *node = data;
-	char *p = r_file_path ("git");
-	bool found = (p && (*p == 'g' ||*p == '/'));
-	free (p);
+	char *git = r_file_path ("git");
+	bool have_git = git != NULL;
+	free (git);
 	if (*node->value == '?') {
-		if (found) {
+		if (have_git) {
 			r_cons_println ("git");
 		}
 		r_cons_println ("rvc");
 		return true;
 	}
 	if (!strcmp (node->value, "git")) {
-		if (found) {
+		if (have_git) {
 			return true;
 		}
 		return false;
@@ -3387,7 +3401,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETCB ("cmd.times", "", &cb_cmdtimes, "run when a command is repeated (number prefix)");
 	/* pdb */
 	SETPREF ("pdb.useragent", "microsoft-symbol-server/6.11.0001.402", "User agent for Microsoft symbol server");
-	SETPREF ("pdb.server", "https://msdl.microsoft.com/download/symbols", "Semi-colon separated list of base URLs for Microsoft symbol servers");
+	SETPREF ("pdb.server", "https://msdl.microsoft.com/download/symbols", "Space separated list of base URLs for Microsoft symbol servers");
 	{
 		char *pdb_path = r_xdg_datadir ("pdb");
 		SETPREF ("pdb.symstore", pdb_path, "path to downstream symbol store"); // XXX rename to dir.pdb
@@ -3404,21 +3418,26 @@ R_API int r_core_config_init(RCore *core) {
 	const char *analsyscc = r_anal_syscc_default (core->anal);
 	SETCB ("anal.syscc", analsyscc? analsyscc: "", (RConfigCallback)&cb_analsyscc, "specify default syscall calling convention");
 	SETCB ("anal.verbose", "false", &cb_analverbose, "show RAnal warnings when analyzing code");
-	SETBPREF ("anal.a2f", "false",  "use the new WIP analysis algorithm (core/p/a2f), anal.depth ignored atm");
+	SETBPREF ("anal.mask", "false", "use the smart aobm command to compute the binary mask of the instruction");
+	SETBPREF ("anal.a2f", "false", "use the new WIP analysis algorithm (core/p/a2f), anal.depth ignored atm");
 	SETCB ("anal.roregs", "gp,zero", (RConfigCallback)&cb_anal_roregs, "comma separated list of register names to be readonly");
 	SETICB ("anal.cs", 0, (RConfigCallback)&cb_anal_cs, "set the value for the x86-16 CS segment register (see asm.offset.segment and asm.offset.segment.bits)");
 	SETICB ("anal.gp", 0, (RConfigCallback)&cb_anal_gp, "set the value of the GP register (MIPS)");
 	SETBPREF ("anal.gpfixed", "true", "set gp register to anal.gp before emulating each instruction in aae");
 	SETCB ("anal.limits", "false", (RConfigCallback)&cb_anal_limits, "restrict analysis to address range [anal.from:anal.to]");
 	SETCB ("anal.noret.refs", "false", (RConfigCallback)&cb_anal_noret_refs, "recursive no return checks (EXPERIMENTAL)");
+	SETCB ("anal.slow", "true", (RConfigCallback)&cb_anal_slow, "uses emulation and deeper analysis for better results");
 	SETCB ("anal.noret", "true", (RConfigCallback)&cb_anal_noret, "propagate noreturn attributes (EXPERIMENTAL)");
 	SETCB ("anal.limits", "false", (RConfigCallback)&cb_anal_limits, "restrict analysis to address range [anal.from:anal.to]");
 	SETICB ("anal.from", -1, (RConfigCallback)&cb_anal_from, "lower limit on the address range for analysis");
 	SETICB ("anal.to", -1, (RConfigCallback)&cb_anal_from, "upper limit on the address range for analysis");
-	n = NODECB ("anal.in", "io.maps.x", &cb_searchin);
+	n = NODECB ("anal.in", "io.maps.x", &cb_searchin); // TODO: use io.sections.x seems to break db/anal/calls.. why?
+	n = NODECB ("anal.in", "bin.ormaps.x", &cb_searchin); // R2R db/anal/calls
 	SETDESC (n, "specify search boundaries for analysis");
 	SETOPTIONS (n, "range", "block",
-		"bin.segment", "bin.segments", "bin.segments.x", "bin.segments.r", "bin.section", "bin.sections", "bin.sections.rwx", "bin.sections.r", "bin.sections.rw", "bin.sections.rx", "bin.sections.wx", "bin.sections.x",
+		"bin.segment", "bin.segments", "bin.segments.x", "bin.segments.r",
+		"bin.section", "bin.sections", "bin.sections.rwx", "bin.sections.r", "bin.sections.rw", "bin.sections.rx", "bin.sections.wx", "bin.sections.x",
+		"bin.ormaps.x",
 		"io.map", "io.maps", "io.maps.rwx", "io.maps.r", "io.maps.rw", "io.maps.rx", "io.maps.wx", "io.maps.x",
 		"dbg.stack", "dbg.heap",
 		"dbg.map", "dbg.maps", "dbg.maps.rwx", "dbg.maps.r", "dbg.maps.rw", "dbg.maps.rx", "dbg.maps.wx", "dbg.maps.x",
@@ -3439,12 +3458,13 @@ R_API int r_core_config_init(RCore *core) {
 	SETICB ("anal.graph_depth", 256, &cb_analgraphdepth, "max depth for path search");
 	SETICB ("anal.sleep", 0, &cb_analsleep, "sleep N usecs every so often during analysis. Avoid 100% CPU usage");
 	SETCB ("anal.ignbithints", "false", &cb_anal_ignbithints, "ignore the ahb hints (only obey asm.bits)");
+	SETBPREF ("anal.imports", "true", "run af@@@i in aa for better noreturn propagation");
 	SETBPREF ("anal.calls", "false", "make basic af analysis walk into calls");
 	SETBPREF ("anal.autoname", "false", "speculatively set a name for the functions, may result in some false positives");
 	SETBPREF ("anal.hasnext", "false", "continue analysis after each function");
 	SETICB ("anal.nonull", 0, &cb_anal_nonull, "do not analyze regions of N null bytes");
 	SETBPREF ("anal.esil", "false", "use the new ESIL code analysis");
-	SETCB ("anal.strings", "false", &cb_analstrings, "identify and register strings during analysis (aar only)");
+	SETBPREF ("anal.strings", "false", "flag strings when performing analysis (see af,aar, e bin.strings)");
 	SETPREF ("anal.types.spec", "gcc",  "set profile for specifying format chars used in type analysis");
 	SETBPREF ("anal.types.verbose", "false", "verbose output from type analysis");
 	SETBPREF ("anal.types.constraint", "false", "enable constraint types analysis for variables");
@@ -3474,12 +3494,10 @@ R_API int r_core_config_init(RCore *core) {
 	SETICB ("arch.bits", 32, &cb_archbits, "word size in bits at arch decoder");
 #endif
 	r_config_set_getter (cfg, "arch.bits", (RConfigCallback)cb_archbits_getter);
+	SETCB ("arch.platform", "", &cb_arch_platform, "define arch platform to use");
 	n = NODECB ("arch.endian", R_SYS_ENDIAN? "big": "little", &cb_archendian);
-	SETDESC (n, "set arch endianess");
+	SETDESC (n, "set arch endianness");
 	SETOPTIONS (n, "big", "little", "bigswap", "littleswap", NULL);
-	n = NODECB ("arch.arch", "null", &cb_archarch);
-	SETDESC (n, "select the architecture to use");
-	r_config_set_getter (cfg, "arch.arch", (RConfigCallback)cb_archarch_getter);
 	// SETCB ("arch.autoselect", "false", &cb_archautoselect, "automagically select matching decoder on arch related config changes (has no effect atm)");
 	SETICB ("asm.lines.maxref", 0, &cb_analmaxrefs, "maximum number of reflines to be analyzed and displayed in asm.lines with pd");
 
@@ -3506,11 +3524,18 @@ R_API int r_core_config_init(RCore *core) {
 
 #if __linux__ && __GNU_LIBRARY__ && __GLIBC__ && __GLIBC_MINOR__
 	n = NODECB ("dbg.malloc", "glibc", &cb_malloc);
+#elif __APPLE__
+	n = NODECB ("dbg.malloc", "macos", &cb_malloc);
+#elif R2__WINDOWS__
+	n = NODECB ("dbg.malloc", "windows", &cb_malloc);
 #else
 	n = NODECB ("dbg.malloc", "jemalloc", &cb_malloc);
 #endif
 	SETDESC (n, "choose malloc structure parser");
 	SETOPTIONS (n, "glibc", "jemalloc", NULL);
+	SETPREF ("dbg.glibc.path", "", "if not empty, use the given path to resolve the libc");
+	SETPREF ("dbg.glibc.version", "", "if not empty, assume the given libc version");
+	SETI ("dbg.glibc.main_arena", 0x0, "main_arena address");
 #if __GLIBC_MINOR__ > 25
 	SETBPREF ("dbg.glibc.tcache", "true", "parse the tcache (glibc.minor > 2.25.x)");
 #else
@@ -3526,7 +3551,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("dbg.glibc.demangle", "false", "demangle linked-lists pointers introduced in glibc 2.32");
 	SETBPREF ("esil.prestep", "true", "step before esil evaluation in `de` commands");
 	SETI ("esil.maxsteps", 0, "If !=0 defines the maximum amount of steps to perform on aesu/aec/..");
-	SETPREF ("esil.fillstack", "", "initialize ESIL stack with (random, debrujn, sequence, zeros, ...)");
+	SETPREF ("esil.fillstack", "", "initialize ESIL stack with (random, debruijn, sequence, zeros, ...)");
 	SETICB ("esil.verbose", 0, &cb_esilverbose, "show ESIL verbose level (0, 1, 2)");
 	SETICB ("esil.gotolimit", core->anal->esil_goto_limit, &cb_gotolimit, "maximum number of gotos per ESIL expression");
 	SETICB ("esil.stack.depth", 256, &cb_esilstackdepth, "number of elements that can be pushed on the esilstack");
@@ -3550,19 +3575,13 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("asm.meta", "true", "display the code/data/format conversions in disasm");
 	SETBPREF ("asm.bytes", "true", "display the bytes of each instruction");
 	SETBPREF ("asm.bytes.align", "false", "align bytes at right (left padding space)");
+	SETBPREF ("asm.bytes.asbits", "false", "show instruction bits instead of bytes");
 	SETBPREF ("asm.bytes.right", "false", "display the bytes at the right of the disassembly");
+	SETBPREF ("asm.bytes.ascii", "false", "display the bytes in ascii characters instead of hex");
 	SETBPREF ("asm.bytes.opcolor", "false", "colorize bytes depending on opcode size + variant information");
 	SETI ("asm.types", 1, "display the fcn types in calls (0=no,1=quiet,2=verbose)");
 	SETBPREF ("asm.midcursor", "false", "cursor in visual disasm mode breaks the instruction");
-	SETBPREF ("asm.cmt.flgrefs", "true", "show comment flags associated to branch reference");
-	SETBPREF ("asm.cmt.right", "true", "show comments at right of disassembly if they fit in screen");
-	SETBPREF ("asm.cmt.esil", "false", "show ESIL expressions as comments");
-	SETI ("asm.cmt.col", 71, "column to align comments");
-	SETICB ("asm.pcalign", 0, &cb_asm_pcalign, "only recognize as valid instructions aligned to this value");
-	// maybe rename to asm.cmt.calls
-	SETBPREF ("asm.calls", "true", "show callee function related info as comments in disasm");
-	SETBPREF ("asm.comments", "true", "show comments in disassembly view");
-	SETBPREF ("asm.usercomments", "false", "show user comments even if asm.comments is false");
+	SETICB ("asm.codealign", 0, &cb_asm_codealign, "only recognize as valid instructions aligned to this value");
 	SETBPREF ("asm.sub.jmp", "true", "always substitute jump, call and branch targets in disassembly");
 	SETBPREF ("asm.hints", "true", "disable all asm.hint* if false");
 	SETBPREF ("asm.hint.jmp", "false", "show jump hints [numbers] in disasm");
@@ -3575,10 +3594,9 @@ R_API int r_core_config_init(RCore *core) {
 	SETI ("asm.hint.pos", 1, "shortcut hint position (-1, 0, 1)");
 	SETBPREF ("asm.slow", "true", "perform slow analysis operations in disasm");
 	SETBPREF ("asm.decode", "false", "use code analysis as a disassembler");
-	SETICB ("asm.imm.arm", false,  &cb_asm_armimm, "DEPRECATED, has no effect");	//TODO: Remove this for 5.8.
 	SETBPREF ("asm.imm.str", "true", "show immediates values as strings");
 	SETBPREF ("asm.imm.trim", "false", "remove all offsets and constants from disassembly");
-	SETBPREF ("asm.indent", "false", "indent disassembly based on reflines depth");
+	SETBPREF ("asm.indent", "false", "indent disassembly based on refline/bb depth (EXPERIMENTAL)");
 	SETI ("asm.indentspace", 2, "how many spaces to indent the code");
 	SETBPREF ("asm.dwarf", "false", "show dwarf comment at disassembly");
 	SETBPREF ("asm.dwarf.abspath", "false", "show absolute path in asm.dwarf");
@@ -3591,6 +3609,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("emu.lazy", "false", "do not emulate all instructions with aae (optimization)");
 	SETBPREF ("emu.stack", "false", "create a temporary fake stack when emulating in disasm (asm.emu)");
 	SETCB ("emu.str", "false", &cb_emustr, "show only strings if any in the asm.emu output");
+	SETBPREF ("emu.bb", "false", "emulate basic blocks (see: abe, aeb and afbd)");
 	SETBPREF ("emu.str.lea", "true", "disable this in ARM64 code to remove some false positives");
 	SETBPREF ("emu.str.off", "false", "always show offset when printing asm.emu strings");
 	SETBPREF ("emu.str.inv", "true", "color-invert emu.str strings");
@@ -3605,11 +3624,13 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("asm.optype", "false", "show opcode type next to the instruction bytes");
 	SETBPREF ("asm.lines.fcn", "true", "show function boundary lines");
 	SETBPREF ("asm.flags", "true", "show flags");
+	SETBPREF ("asm.flags.prefix", "true", "show ;-- before the flags");
 	SETICB ("asm.flags.maxname", 0, &cb_maxname, "maximum length of flag name with smart chopping");
 	SETI ("asm.flags.limit", 0, "maximum number of flags to show in a single offset");
 	SETBPREF ("asm.flags.right", "false", "show flags as comments at the right side of the disassembly");
 	SETBPREF ("asm.flags.offset", "false", "show offset in flags");
 	SETBPREF ("asm.flags.inbytes", "false",  "display flags inside the bytes space");
+	SETBPREF ("asm.flags.inoffset", "false",  "display flags inside the offset column");
 	SETBPREF ("asm.flags.inline", "false",  "display flags in line separated by commas instead of newlines");
 	n = NODEICB ("asm.flags.middle", 2, &cb_midflags);
 	SETOPTIONS (n, "0 = do not show flag", "1 = show without realign", "2 = realign at middle flag",
@@ -3620,6 +3641,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("asm.lbytes", "true", "align disasm bytes to left");
 	SETBPREF ("asm.lines", "true", "show ASCII-art lines at disassembly");
 	SETBPREF ("asm.lines.jmp", "true", "show flow lines at jumps");
+	SETI ("asm.lines.limit", 4096*4, "dont show control flow lines if function is larger than X bytes");
 	SETBPREF ("asm.lines.bb", "false", "show empty line after every basic block");
 	SETBPREF ("asm.lines.call", "false", "enable call lines");
 	SETBPREF ("asm.lines.ret", "false", "show separator lines after ret");
@@ -3639,11 +3661,12 @@ R_API int r_core_config_init(RCore *core) {
 	SETCB ("scr.rainbow", "false", &cb_scrrainbow, "shows rainbow colors depending of address");
 	SETCB ("scr.last", "true", &cb_scrlast, "cache last output after flush to make _ command work (disable for performance)");
 	SETBPREF ("asm.offset", "true", "show offsets in disassembly");
+	SETBPREF ("asm.offset.base36", "false", "use base36 for addresses");
 	SETCB ("asm.offset.segment", "false", &cb_segoff, "show segmented address in prompt (x86-16)");
 	SETICB ("asm.offset.segment.bits", 4, &cb_asm_offset_segment_bits, "segment granularity in bits (x86-16)");
 	SETCB ("asm.offset.base10", "false", &cb_decoff, "show address in base 10 instead of hexadecimal");
-	SETBPREF ("asm.offset.relative", "false", "show relative offsets instead of absolute address in disasm");
-	SETBPREF ("asm.offset.flags", "false", "show relative offsets to flags (not only functions)");
+	SETCB ("asm.offset.relto", "", &cb_reloff, "show offset relative to fun,map,sec,flg");
+	SETBPREF ("asm.offset.focus", "false", "show only the addresses that branch or located at the beginning of a basic block");
 	SETBPREF ("asm.section", "false", "show section name before offset");
 	SETBPREF ("asm.section.perm", "false", "show section permissions in the disasm");
 	SETBPREF ("asm.section.name", "true", "show section name in the disasm");
@@ -3658,6 +3681,8 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("asm.tabs.once", "false", "only tabulate the opcode, not the arguments");
 	SETI ("asm.tabs.off", 0, "tabulate spaces after the offset");
 	SETBPREF ("asm.trace", "false", "show execution traces for each opcode");
+	SETBPREF ("asm.trace.stats", "true", "indent disassembly with trace.count information");
+	SETBPREF ("asm.trace.color", "true", "indent disassembly with trace.count information");
 	SETBPREF ("asm.trace.space", "false", "indent disassembly with trace.count information");
 	SETBPREF ("asm.ucase", "false", "use uppercase syntax at disassembly");
 	SETBPREF ("asm.capitalize", "false", "use camelcase at disassembly");
@@ -3668,7 +3693,6 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("asm.sub.varonly", "true", "substitute the entire variable expression with the local variable name (e.g. [local10h] instead of [ebp+local10h])");
 	SETBPREF ("asm.sub.reg", "false", "substitute register names with their associated role name (drp~=)");
 	SETBPREF ("asm.sub.rel", "true", "substitute pc relative expressions in disasm");
-	SETBPREF ("asm.cmt.fold", "false", "fold comments, toggle with Vz");
 	SETBPREF ("asm.family", "false", "show family name in disasm");
 	SETBPREF ("asm.symbol", "false", "show symbol+delta instead of absolute offset");
 	SETBPREF ("asm.anal", "false", "analyze code and refs while disassembling (see anal.strings)");
@@ -3702,9 +3726,20 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("asm.describe", "false", "show opcode description");
 	SETPREF ("asm.highlight", "", "highlight current line");
 	SETBPREF ("asm.marks", "true", "show marks before the disassembly");
+
+	// options for the comments in the disassembly
+	SETBPREF ("asm.comments", "true", "show comments in disassembly view (see 'e asm.cmt.')");
+	SETBPREF ("asm.cmt.calls", "true", "show callee function related info as comments in disasm");
+	SETBPREF ("asm.cmt.user", "false", "show user comments even if asm.comments is false");
 	SETBPREF ("asm.cmt.refs", "false", "show flag and comments from refs in disasm");
 	SETBPREF ("asm.cmt.patch", "false", "show patch comments in disasm");
 	SETBPREF ("asm.cmt.off", "nodup", "show offset comment in disasm (true, false, nodup)");
+	SETBPREF ("asm.cmt.fold", "false", "fold comments, toggle with Vz");
+	SETBPREF ("asm.cmt.token", ";", "token to use before printing a comment");
+	SETBPREF ("asm.cmt.flgrefs", "true", "show comment flags associated to branch reference");
+	SETBPREF ("asm.cmt.right", "true", "show comments at right of disassembly if they fit in screen");
+	SETBPREF ("asm.cmt.esil", "false", "show ESIL expressions as comments");
+	SETI ("asm.cmt.col", 71, "column to align comments");
 	SETBPREF ("asm.payloads", "false", "show payload bytes in disasm");
 
 	/* bin */
@@ -3712,6 +3747,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETCB ("bin.usextr", "true", &cb_usextr, "use extract plugins when loading files");
 	SETCB ("bin.useldr", "true", &cb_useldr, "use loader plugins when loading files");
 	SETPREF ("bin.types", "true", "parse and load filetype and language file header structs");
+	SETICB ("bin.limit", 0, &cb_binlimit, "stop parsing after finding N symbols/relocs/strings");
 	SETCB ("bin.str.purge", "", &cb_strpurge, "purge strings (e bin.str.purge=? provides more detail)");
 	SETPREF ("bin.str.real", "false", "set the realname in rbin.strings for better disasm (EXPERIMENTAL)");
 	SETCB ("bin.str.nofp", "false", &cb_nofp, "set to true to reduce the false positive strings (EXPERIMENTAL)");
@@ -3731,6 +3767,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETI ("bin.laddr", 0, "base address for loading library ('*.so')");
 	SETCB ("bin.dbginfo", "true", &cb_bindbginfo, "load debug information at startup if available");
 	SETBPREF ("bin.relocs", "true", "load relocs information at startup if available");
+	SETBPREF ("bin.relocs.apply", "false", "apply reloc information");
 	SETICB ("bin.str.min", 0, &cb_binminstr, "minimum string length for r_bin");
 	SETICB ("bin.maxsymlen", 0, &cb_binmaxsymlen, "maximum length for symbol names");
 	SETICB ("bin.str.max", 0, &cb_binmaxstr, "maximum string length for r_bin");
@@ -3800,15 +3837,16 @@ R_API int r_core_config_init(RCore *core) {
 	SETI ("cfg.cpuaffinity", 0, "run on cpuid");
 
 	/* log */
-	SETICB ("log.level", R_LOGLVL_DEFAULT, cb_log_config_level, "Target log level/severity (0:FATAL 1:ERROR 2:INFO 3:WARN 4:TODO 5:DEBUG)");
-	SETCB ("log.ts", "false", cb_log_config_ts, "Show timestamp in log messages");
+	SETICB ("log.level", R_LOG_LEVEL_DEFAULT, cb_config_log_level, "Target log level/severity (0:FATAL 1:ERROR 2:INFO 3:WARN 4:TODO 5:DEBUG)");
+	SETCB ("log.ts", "false", cb_config_log_ts, "Show timestamp in log messages");
 
-	SETICB ("log.traplevel", 0, cb_log_config_traplevel, "Log level for trapping R2 when hit");
-	SETCB ("log.filter", "", cb_log_config_filter, "Filter only messages matching given origin");
+	SETICB ("log.traplevel", 0, cb_config_log_traplevel, "Log level for trapping R2 when hit");
+	SETCB ("log.filter", "", cb_config_log_filter, "Filter only messages matching given origin");
 	SETCB ("log.origin", "false", cb_log_origin, "Show [origin] in log messages");
 	SETCB ("log.source", "false", cb_log_source, "Show source [file:line] in the log message");
-	SETCB ("log.color", "false", cb_log_config_colors, "Should the log output use colors");
-	SETCB ("log.quiet", "false", cb_log_config_quiet, "Be quiet, dont log anything to console");
+	SETCB ("log.color", "true", cb_config_log_colors, "Should the log output use colors");
+	SETCB ("log.quiet", "false", cb_config_log_quiet, "Be quiet, dont log anything to console");
+	SETCB ("log.cons", "false", cb_config_log_cons, "Log messages using rcons (handy for monochannel r2pipe)");
 
 	// zign
 	SETPREF ("zign.prefix", "sign", "default prefix for zignatures matches");
@@ -3825,6 +3863,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETPREF ("zign.diff.bthresh", "1.0", "threshold for diffing zign bytes [0, 1] (see zc?)");
 	SETPREF ("zign.diff.gthresh", "1.0", "threshold for diffing zign graphs [0, 1] (see zc?)");
 	SETPREF ("zign.threshold", "0.0", "minimum similarity required for inclusion in zb output");
+	SETBPREF ("zign.mangled", "false", "use the manged name for zignatures (EXPERIMENTAL)");
 
 	/* diff */
 	SETCB ("diff.sort", "addr", &cb_diff_sort, "specify function diff sorting column see (e diff.sort=?)");
@@ -3867,6 +3906,47 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("stack.annotated", "false", "show annotated hexdump in visual debug");
 	SETI ("stack.size", 64,  "size in bytes of stack hexdump in visual debug");
 	SETI ("stack.delta", 0,  "delta for the stack dump");
+
+	/* cmd */
+	SETCB ("cmd.demangle", "false", &cb_bdc, "run xcrun swift-demangle and similar if available (SLOW)");
+	SETICB ("cmd.depth", 10, &cb_cmddepth, "maximum command depth");
+	SETPREF ("cmd.undo", "true", "stack `uc` undo commands when running some commands like w, af, CC, ..");
+	SETPREF ("cmd.bp", "", "run when a breakpoint is hit");
+	SETPREF ("cmd.onsyscall", "", "run when a syscall is hit");
+	SETICB ("cmd.hitinfo", 1, &cb_debug_hitinfo, "show info when a tracepoint/breakpoint is hit");
+	SETPREF ("cmd.stack", "", "command to display the stack in visual debug mode");
+	SETPREF ("cmd.cprompt", "", "column visual prompt commands");
+	SETPREF ("cmd.gprompt", "", "graph visual prompt commands");
+	SETPREF ("cmd.hit", "", "run when a search hit is found");
+#if R2__UNIX__
+	SETPREF ("cmd.usr1", "", "run when SIGUSR1 signal is received");
+	SETPREF ("cmd.usr2", "", "run when SIGUSR2 signal is received");
+#endif
+	SETPREF ("cmd.open", "", "run when file is opened");
+	SETPREF ("cmd.load", "", "run when binary is loaded");
+	SETPREF ("cmd.bbgraph", "", "show the output of this command in the graph basic blocks");
+	RConfigNode *cmdpdc = NODECB ("cmd.pdc", "", &cb_cmdpdc);
+	SETDESC (cmdpdc, "select pseudo-decompiler command to run after pdc");
+	update_cmdpdc_options (core, cmdpdc);
+	SETCB ("cmd.log", "", &cb_cmdlog, "every time a new T log is added run this command");
+	SETPREF ("cmd.prompt", "", "prompt commands");
+	SETCB ("cmd.repeat", "false", &cb_cmdrepeat, "empty command an alias for '..' (repeat last command)");
+	SETPREF ("cmd.fcn.new", "", "run when new function is analyzed");
+	SETPREF ("cmd.fcn.delete", "", "run when a function is deleted");
+	SETPREF ("cmd.fcn.rename", "", "run when a function is renamed");
+	SETPREF ("cmd.visual", "", "replace current print mode");
+	SETPREF ("cmd.vprompt", "", "commands to run (before) the visual prompt");
+	SETPREF ("cmd.vprompt2", "", "commands to execute (after) the visual prompt");
+	SETPREF ("cmd.step", "", "run command on every debugger step");
+
+	SETCB ("cmd.esil.pin", "", &cb_cmd_esil_pin, "command to execute everytime a pin is hit by the program counter");
+	SETCB ("cmd.esil.step", "", &cb_cmd_esil_step, "command to run before performing a step in the emulator");
+	SETCB ("cmd.esil.stepout", "", &cb_cmd_esil_step_out, "command to run after performing a step in the emulator");
+	SETCB ("cmd.esil.mdev", "", &cb_cmd_esil_mdev, "command to run when memory device address is accessed");
+	SETCB ("cmd.esil.intr", "", &cb_cmd_esil_intr, "command to run when an esil interrupt happens");
+	SETCB ("cmd.esil.trap", "", &cb_cmd_esil_trap, "command to run when an esil trap happens");
+	SETCB ("cmd.esil.todo", "", &cb_cmd_esil_todo, "command to run when the esil instruction contains TODO");
+	SETCB ("cmd.esil.ioer", "", &cb_cmd_esil_ioer, "command to run when esil fails to IO (invalid read/write)");
 
 	SETCB ("dbg.maxsnapsize", "32M", &cb_dbg_maxsnapsize, "dont make snapshots of maps bigger than a specific size");
 	SETCB ("dbg.wrap", "false", &cb_dbg_wrap, "enable the ptrace-wrap abstraction layer (needed for debugging from iaito)");
@@ -3935,44 +4015,6 @@ R_API int r_core_config_init(RCore *core) {
 	SETICB ("dbg.btdepth", 128, &cb_dbgbtdepth, "depth of backtrace");
 
 
-	/* cmd */
-	SETCB ("cmd.demangle", "false", &cb_bdc, "run xcrun swift-demangle and similar if available (SLOW)");
-	SETICB ("cmd.depth", 10, &cb_cmddepth, "maximum command depth");
-	SETPREF ("cmd.undo", "true", "stack `uc` undo commands when running some commands like w, af, CC, ..");
-	SETPREF ("cmd.bp", "", "run when a breakpoint is hit");
-	SETPREF ("cmd.onsyscall", "", "run when a syscall is hit");
-	SETICB ("cmd.hitinfo", 1, &cb_debug_hitinfo, "show info when a tracepoint/breakpoint is hit");
-	SETPREF ("cmd.stack", "", "command to display the stack in visual debug mode");
-	SETPREF ("cmd.cprompt", "", "column visual prompt commands");
-	SETPREF ("cmd.gprompt", "", "graph visual prompt commands");
-	SETPREF ("cmd.hit", "", "run when a search hit is found");
-#if R2__UNIX__
-	SETPREF ("cmd.usr1", "", "run when SIGUSR1 signal is received");
-	SETPREF ("cmd.usr2", "", "run when SIGUSR2 signal is received");
-#endif
-	SETPREF ("cmd.open", "", "run when file is opened");
-	SETPREF ("cmd.load", "", "run when binary is loaded");
-	SETPREF ("cmd.bbgraph", "", "show the output of this command in the graph basic blocks");
-	RConfigNode *cmdpdc = NODECB ("cmd.pdc", "", &cb_cmdpdc);
-	SETDESC (cmdpdc, "select pseudo-decompiler command to run after pdc");
-	update_cmdpdc_options (core, cmdpdc);
-	SETCB ("cmd.log", "", &cb_cmdlog, "every time a new T log is added run this command");
-	SETPREF ("cmd.prompt", "", "prompt commands");
-	SETCB ("cmd.repeat", "false", &cb_cmdrepeat, "empty command an alias for '..' (repeat last command)");
-	SETPREF ("cmd.fcn.new", "", "run when new function is analyzed");
-	SETPREF ("cmd.fcn.delete", "", "run when a function is deleted");
-	SETPREF ("cmd.fcn.rename", "", "run when a function is renamed");
-	SETPREF ("cmd.visual", "", "replace current print mode");
-	SETPREF ("cmd.vprompt", "", "visual prompt commands");
-
-	SETCB ("cmd.esil.pin", "", &cb_cmd_esil_pin, "command to execute everytime a pin is hit by the program counter");
-	SETCB ("cmd.esil.step", "", &cb_cmd_esil_step, "command to run before performing a step in the emulator");
-	SETCB ("cmd.esil.stepout", "", &cb_cmd_esil_step_out, "command to run after performing a step in the emulator");
-	SETCB ("cmd.esil.mdev", "", &cb_cmd_esil_mdev, "command to run when memory device address is accessed");
-	SETCB ("cmd.esil.intr", "", &cb_cmd_esil_intr, "command to run when an esil interrupt happens");
-	SETCB ("cmd.esil.trap", "", &cb_cmd_esil_trap, "command to run when an esil trap happens");
-	SETCB ("cmd.esil.todo", "", &cb_cmd_esil_todo, "command to run when the esil instruction contains TODO");
-	SETCB ("cmd.esil.ioer", "", &cb_cmd_esil_ioer, "command to run when esil fails to IO (invalid read/write)");
 
 	/* filesystem */
 	n = NODECB ("fs.view", "normal", &cb_fsview);
@@ -4010,21 +4052,49 @@ R_API int r_core_config_init(RCore *core) {
 #if R2__WINDOWS__
 	r_config_set (cfg, "http.browser", "start");
 #else
-	if (r_file_exists ("/usr/bin/openURL")) { // iOS ericautils
-		r_config_set (cfg, "http.browser", "/usr/bin/openURL");
-	} else if (r_file_exists (TERMUX_PREFIX "/bin/termux-open")) {
-		r_config_set (cfg, "http.browser", TERMUX_PREFIX "/bin/termux-open");
-	} else if (r_file_exists ("/system/bin/toolbox")) {
-		r_config_set (cfg, "http.browser",
-				"LD_LIBRARY_PATH=/system/lib am start -a android.intent.action.VIEW -d");
-	} else if (r_file_exists ("/usr/bin/xdg-open")) {
-		r_config_set (cfg, "http.browser", "xdg-open");
-	} else if (r_file_exists ("/usr/bin/open")) {
-		r_config_set (cfg, "http.browser", "open");
-	} else {
-		r_config_set (cfg, "http.browser", "firefox");
+	{
+		/* bin_name, standard_path, http.browser value override */
+		static const char *bin_data[] = {
+			"openURL", "/usr/bin/openURL", "", // iOS ericautils
+			"termux-open", TERMUX_PREFIX "/bin/termux-open", "",
+			"toolbox", "/system/bin/toolbox", "LD_LIBRARY_PATH=/system/lib am start -a android.intent.action.VIEW -d",
+			"xdg-open", "/usr/bin/xdg-open", "",
+			"open", "/usr/bin/open", "",
+			NULL
+		};
+		int i;
+		bool fallback = true;
+
+		/* Attempt to find binary in path before falling back to
+		 * standard locations */
+		for (i = 0; bin_data[i]; i += 3) {
+			const char *bin_name = bin_data[i];
+			const char *standard_path = bin_data[i + 1];
+			const char *browser_override = bin_data[i + 2];
+			const char *path;
+
+			/* Try to find bin in path */
+			char *bin_path = r_file_path (bin_name);
+			path = bin_path;
+
+			/* Not in path, but expected location exists */
+			if (!path && r_file_exists (standard_path)) {
+				path = standard_path;
+			}
+
+			if (path) {
+				r_config_set (cfg, "http.browser", r_str_get_fail (browser_override, path));
+				fallback = false;
+			}
+
+			free (bin_path);
+		}
+
+		if (fallback) {
+			r_config_set (cfg, "http.browser", "firefox");
+		}
+		r_config_desc (cfg, "http.browser", "command to open HTTP URLs");
 	}
-	r_config_desc (cfg, "http.browser", "command to open HTTP URLs");
 #endif
 	SETI ("http.maxsize", 0, "maximum file size for upload");
 	SETPREF ("http.index", "index.html", "main html file to check in directory");
@@ -4085,6 +4155,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETPREF ("graph.font", "Courier", "Font for dot graphs");
 	SETBPREF ("graph.offset", "false", "show offsets in graphs");
 	SETBPREF ("graph.bytes", "false", "show opcode bytes in graphs");
+	SETI ("graph.bb.maxwidth", 0, "maximum width for the basic blocks in the graph");
 	SETI ("graph.from", UT64_MAX, "lower bound address when drawing global graphs");
 	SETI ("graph.to", UT64_MAX, "upper bound address when drawing global graphs");
 	SETI ("graph.scroll", 5, "scroll speed in ascii-art graph");
@@ -4156,21 +4227,21 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("scr.wheel", "true", "mouse wheel in Visual; temporaryly disable/reenable by right click/Enter)");
 	SETBPREF ("scr.cursor", "false", "keyboard controlled cursor in visual and panels");
 	SETPREF ("scr.layout", "", "name of the selected panels layout to load as default");
-	// DEPRECATED: USES hex.cols now SETI ("scr.colpos", 80, "Column position of cmd.cprompt in visual");
 	SETCB ("scr.breakword", "", &cb_scrbreakword, "emulate console break (^C) when a word is printed (useful for pD)");
 	SETCB ("scr.breaklines", "false", &cb_breaklines, "break lines in Visual instead of truncating them");
 	SETCB ("scr.gadgets", "true", &cb_scr_gadgets, "run pg in prompt, visual and panels");
 	SETBPREF ("scr.panelborder", "false", "specify panels border active area (0 by default)");
 	SETCB ("scr.theme", "default", &cb_scrtheme, "specify the theme name to load on startup (See 'ec?')");
-	SETICB ("scr.columns", 0, &cb_scrcolumns, "force console column count (width)");
+	SETICB ("scr.timeout", 0, &cb_scrtimeout, "check for timeout during the break.(push|pop) contexts");
+	SETICB ("scr.cols", 0, &cb_scrcolumns, "force console column count (width)");
 	SETICB ("scr.optimize", 0, &cb_scroptimize, "optimize the amount of ansi escapes and spaces (0, 1, 2 passes)");
 	SETBPREF ("scr.dumpcols", "false", "prefer pC commands before p ones");
 	SETCB ("scr.rows", "0", &cb_scrrows, "force console row count (height) ");
 	SETI ("scr.notch", 0, "force console row count (height) (duplicate?)");
 	SETICB ("scr.rows", 0, &cb_rows, "force console row count (height) (duplicate?)");
 	SETCB ("scr.fps", "false", &cb_fps, "show FPS in Visual");
-	SETICB ("scr.fix.rows", 0, &cb_fixrows, "Workaround for Linux TTY");
-	SETICB ("scr.fix.columns", 0, &cb_fixcolumns, "workaround for Prompt iOS SSH client");
+	SETICB ("scr.rows.fix", 0, &cb_fixrows, "Workaround for Linux TTY");
+	SETICB ("scr.cols.fix", 0, &cb_fixcolumns, "workaround for Prompt iOS SSH client");
 	SETCB ("scr.highlight", "", &cb_scrhighlight, "highlight that word at RCons level");
 #if __EMSCRIPTEN__ || __wasi__
 	SETCB ("scr.interactive", "false", &cb_scrint, "start in interactive mode");
@@ -4188,6 +4259,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("scr.randpal", "false", "random color palete or just get the next one from 'eco'");
 	SETCB ("scr.highlight.grep", "false", &cb_scr_color_grep_highlight, "highlight (INVERT) the grepped words");
 	SETCB ("scr.prompt.popup", "false", &cb_scr_prompt_popup, "show widget dropdown for autocomplete");
+	SETBPREF ("scr.prompt.code", "false", "show last command return code in the prompt");
 	SETCB ("scr.prompt.vi", "false", &cb_scr_vi, "use vi mode for input prompt");
 	SETPREF ("scr.prompt.tabhelp", "true", "show command help when pressing the TAB key");
 	SETCB ("scr.prompt.mode", "false", &cb_scr_prompt_mode,  "set prompt color based on vi mode");
@@ -4208,6 +4280,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETCB ("scr.utf8", r_str_bool (r_cons_is_utf8()), &cb_utf8, "show UTF-8 characters instead of ANSI");
 	SETCB ("scr.utf8.curvy", "false", &cb_utf8_curvy, "show curved UTF-8 corners (requires scr.utf8)");
 	SETCB ("scr.demo", "false", &cb_scr_demo, "use demoscene effects if available");
+	SETPREF ("scr.analbar", "false", "show progressbar for aaa instead of logging what its doing");
 	SETCB ("scr.hist.block", "true", &cb_scr_histblock, "use blocks for histogram");
 	SETCB ("scr.hist.filter", "true", &cb_scr_histfilter, "filter history for matching lines when using up/down keys");
 #if __EMSCRIPTEN__ || __wasi__
@@ -4227,18 +4300,20 @@ R_API int r_core_config_init(RCore *core) {
 
 	/* search */
 	SETCB ("search.contiguous", "true", &cb_contiguous, "accept contiguous/adjacent search hits");
-	SETBPREF ("search.verbose", "true", "make the output of search commands verbose");
+	SETBPREF ("search.verbose", "false", "make the output of search commands verbose");
 	SETICB ("search.align", 0, &cb_searchalign, "only catch aligned search hits");
 	SETI ("search.chunk", 0, "chunk size for /+ (default size is asm.bits/8");
 	SETI ("search.esilcombo", 8, "stop search after N consecutive hits");
 	SETI ("search.distance", 0, "search string distance");
+	SETBPREF ("search.badpages", "true", "scan and stop searching when finding bad pages");
 	SETBPREF ("search.flags", "true", "all search results are flagged, otherwise only printed");
+	SETBPREF ("search.named", "false", "name flags with given string instead of search.prefix");
 	SETBPREF ("search.overlap", "false", "look for overlapped search hits");
 	SETI ("search.maxhits", 0, "maximum number of hits (0: no limit)");
 	SETI ("search.from", -1, "search start address");
 	n = NODECB ("search.in", "io.maps", &cb_searchin);
 	SETDESC (n, "specify search boundaries");
-	SETOPTIONS (n, "raw", "flag", "block",
+	SETOPTIONS (n, "raw", "flag", "flag:", "block",
 		"bin.section", "bin.sections", "bin.sections.rwx", "bin.sections.r", "bin.sections.rw", "bin.sections.rx", "bin.sections.wx", "bin.sections.x",
 		"io.map", "io.maps", "io.maps.rwx", "io.maps.r", "io.maps.rw", "io.maps.rx", "io.maps.wx", "io.maps.x",
 		"dbg.stack", "dbg.heap",
@@ -4260,10 +4335,11 @@ R_API int r_core_config_init(RCore *core) {
 
 	/* io */
 	SETCB ("io.cache", "false", &cb_io_cache, "change both of io.cache.{read,write}");
-	SETCB ("io.cache.auto", "false", &cb_io_cache_mode, "automatic cache all reads in the IO backend");
-	SETCB ("io.cache.read", "false", &cb_io_cache_read, "enable read cache for vaddr (or paddr when io.va=0)");
+	SETCB ("io.cache.read", "true", &cb_io_cache_read, "enable read cache for vaddr (or paddr when io.va=0)");
+	SETCB ("io.cache.write", "true", &cb_io_cache_write, "enable write cache for vaddr (or paddr when io.va=0)");
 	SETCB ("io.cache.nodup", "false", &cb_io_cache_nodup, "do not cache duplicated cache writes");
-	SETCB ("io.cache.write", "false", &cb_io_cache_write, "enable write cache for vaddr (or paddr when io.va=0)");
+	SETCB ("io.cache.auto", "false", &cb_io_cache_mode, "automatic cache all reads in the IO backend"); // renamed to slurp?
+	/* pcache */
 	SETCB ("io.pcache", "false", &cb_iopcache, "io.cache for p-level");
 	SETCB ("io.pcache.write", "false", &cb_iopcachewrite, "enable write-cache");
 	SETCB ("io.pcache.read", "false", &cb_iopcacheread, "enable read-cache");
@@ -4278,21 +4354,19 @@ R_API int r_core_config_init(RCore *core) {
 	SETCB ("io.autofd", "true", &cb_ioautofd, "change fd when opening a new file");
 	SETCB ("io.unalloc", "false", &cb_io_unalloc, "check each byte if it's allocated");
 	SETCB ("io.unalloc.ch", ".", &cb_io_unalloc_ch, "char to display if byte is unallocated");
+	SETCB ("io.overlay", "true", &cb_io_overlay, "honor io overlay");
 
 	/* file */
 	SETBPREF ("file.info", "true", "RBin info loaded");
 	SETPREF ("file.type", "", "type of current file");
 	SETI ("file.loadalign", 1024, "alignment of load addresses");
 #if R2_580
-	SETCB ("file.log", "", cb_log_config_file, "Save log messages to given filename (log.file)");
-	SETCB ("file.output", "", &cb_teefile, "pipe output to file of this name (scr.tee)");
+	SETCB ("file.log", "", cb_config_log_file, "Save log messages to given filename (alias for log.file)");
+	SETCB ("file.output", "", &cb_config_file_output, "pipe output to file of this name (scr.tee)");
 #else
-	SETCB ("log.file", "", cb_log_config_file, "Save log messages to given filename");
-	SETCB ("scr.tee", "", &cb_teefile, "pipe output to file of this name");
+	SETCB ("log.file", "", cb_config_log_file, "Save log messages to given filename");
+	SETCB ("scr.tee", "", &cb_config_file_output, "pipe output to file of this name (same as file.output)");
 #endif
-	/* magic */
-	SETI ("magic.depth", 100, "recursivity depth in magic description strings");
-
 	/* rap */
 	SETBPREF ("rap.loop", "true", "run rap as a forever-listening daemon (=:9090)");
 
@@ -4332,7 +4406,7 @@ R_API int r_core_config_init(RCore *core) {
 	{
 		char *p = r_file_path ("git");
 		SETPREF ("prj.vc.message", "", "default commit message for rvc/git");
-		if (strcmp (p, "git")) {
+		if (R_STR_ISNOTEMPTY (p)) {
 			SETCB ("prj.vc.type", "git", &cb_prjvctype, "what should projects use as a vc");
 		} else {
 			SETBPREF ("prj.vc", "false", "use your version control system of choice (rvc, git) to manage projects");

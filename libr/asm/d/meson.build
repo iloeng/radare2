@@ -1,7 +1,8 @@
 sdb_files = [
   '6502',
   '8051',
-  'LH5801',
+  'LH5801', ## todo lowercase
+  'stm8',
   'arc',
   'arm',
   'avr',
@@ -10,6 +11,7 @@ sdb_files = [
   'chip8',
   'dalvik',
   'evm',
+  'gb',
   'i4004',
   'i8080',
   'java',

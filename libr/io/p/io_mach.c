@@ -180,7 +180,7 @@ static ut64 getNextValid(RIO *io, RIODesc *fd, ut64 addr) {
 	int tid = __get_pid (fd);
 	task_t task = pid_to_task (fd, tid);
 	ut64 lower = addr;
-#if __arm64__ || __aarch64__
+#if __arm64__ || __aarch64__ || __arm64e__
 	size = osize = 16384; // acording to frida
 #else
 	size = osize = 4096;
@@ -501,12 +501,12 @@ static char *__system(RIO *io, RIODesc *fd, const char *cmd) {
 	}
 	if (r_str_startswith (cmd, "perm")) {
 		int perm = r_str_rwx (cmd + 4);
-		if (perm) {
+		if (perm >= 0) {
 			int pagesize = tsk_pagesize (fd);
 			task_t task = pid_to_task (fd, iodd->tid);
 			tsk_setperm (io, task, io->off, pagesize, perm);
 		} else {
-			eprintf ("Usage: :perm [rwx]\n");
+			R_LOG_ERROR ("Usage: :perm [rwx]");
 		}
 		return NULL;
 	}
@@ -559,9 +559,11 @@ static int __get_pid(RIODesc *desc) {
 
 // TODO: rename ptrace to io_mach .. err io.ptrace ??
 RIOPlugin r_io_plugin_mach = {
-	.name = "mach",
-	.desc = "Attach to mach debugger instance",
-	.license = "LGPL",
+	.meta = {
+		.name = "mach",
+		.desc = "Attach to mach debugger instance",
+		.license = "LGPL",
+	},
 	.uris = "attach://,mach://,smach://",
 	.open = __open,
 	.close = __close,
@@ -577,9 +579,11 @@ RIOPlugin r_io_plugin_mach = {
 
 #else
 RIOPlugin r_io_plugin_mach = {
-	.name = "mach",
-	.desc = "mach debug io (unsupported in this platform)",
-	.license = "LGPL"
+	.meta = {
+		.name = "mach",
+		.desc = "mach debug io (unsupported in this platform)",
+		.license = "LGPL"
+	},
 };
 #endif
 

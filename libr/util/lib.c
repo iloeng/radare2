@@ -1,12 +1,12 @@
-/* radare - LGPL - Copyright 2008-2022 - pancake */
+/* radare - LGPL - Copyright 2008-2024 - pancake */
 
 #include <r_util.h>
 #include <r_lib.h>
 
-R_LIB_VERSION(r_lib);
+R_LIB_VERSION (r_lib);
 
 /* XXX : this must be registered at runtime instead of hardcoded */
-static const char *r_lib_types[] = {
+static const char *const r_lib_types[] = {
 	"io", "dbg", "lang", "asm", "anal", "parse", "bin", "bin_xtr", "bin_ldr",
 	"bp", "syscall", "fastcall", "crypto", "core", "egg", "fs", "arch", NULL
 };
@@ -20,6 +20,7 @@ static const char *__lib_types_get(int idx) {
 
 R_API int r_lib_types_get_i(const char *str) {
 	int i;
+	// eprintf ("slow types.geti\n");
 	for (i = 0; r_lib_types[i]; i++) {
 		if (!strcmp (str, r_lib_types[i])) {
 			return i;
@@ -34,7 +35,11 @@ R_API void *r_lib_dl_open(const char *libname) {
 #if R2__UNIX__
 	if (libname) {
 #if __linux__
-		ret = dlopen (libname, RTLD_NOW);
+		if (strstr (libname, "python")) {
+			ret = dlopen (libname, RTLD_GLOBAL | RTLD_NOW);
+		} else {
+			ret = dlopen (libname, RTLD_NOW);
+		}
 #endif
 		if (!ret) {
 			ret = dlopen (libname, RTLD_GLOBAL | RTLD_LAZY);
@@ -159,11 +164,16 @@ R_API RLib *r_lib_new(const char *symname, const char *symnamefunc) {
 	if (lib) {
 		// __has_debug = r_sys_getenv_asbool ("R2_DEBUG"); /// XXX just use loglevel
 		if (r_sys_getenv_asbool ("R2_DEBUG")) {
-			r_log_set_level (R_LOGLVL_DEBUG);
+			r_log_set_level (R_LOG_LEVEL_DEBUG);
 		}
 		lib->ignore_version = r_sys_getenv_asbool ("R2_IGNVER");
 		lib->handlers = r_list_newf (free);
+		int i;
+		for (i = 0; i < R_LIB_TYPE_LAST; i++) {
+			lib->handlers_bytype[i] = NULL;
+		}
 		lib->plugins = r_list_newf (free);
+		lib->plugins_ht = ht_pp_new0 ();
 		lib->symname = strdup (symname? symname: R_LIB_SYMNAME);
 		lib->symnamefunc = strdup (symnamefunc? symnamefunc: R_LIB_SYMFUNC);
 	}
@@ -175,6 +185,7 @@ R_API void r_lib_free(RLib *lib) {
 		r_lib_close (lib, NULL);
 		r_list_free (lib->handlers);
 		r_list_free (lib->plugins);
+		ht_pp_free(lib->plugins_ht);
 		free (lib->symname);
 		free (lib->symnamefunc);
 		free (lib);
@@ -187,22 +198,32 @@ static bool __lib_dl_check_filename(const char *file) {
 
 R_API int r_lib_run_handler(RLib *lib, RLibPlugin *plugin, RLibStruct *symbol) {
 	RLibHandler *h = plugin->handler;
-	if (h && h->constructor) {
-		R_LOG_DEBUG ("PLUGIN LOADED %p fcn %p", h, h->constructor);
-		return h->constructor (plugin, h->user, symbol->data);
+	if (h) {
+		if (h->constructor) {
+			R_LOG_DEBUG ("PLUGIN %s LOADED %p fcn %p", h->desc, h, h->constructor);
+			return h->constructor (plugin, h->user, symbol->data);
+		}
+		R_LOG_DEBUG ("Cannot find plugin constructor");
+		return -1;
 	}
-	R_LOG_DEBUG ("Cannot find plugin constructor");
-	return -1;
+	return 0;
 }
 
 R_API RLibHandler *r_lib_get_handler(RLib *lib, int type) {
-	RLibHandler *h;
+#if 1
+	if (type < 0 || type >= R_LIB_TYPE_LAST) {
+		return NULL;
+	}
+	return lib->handlers_bytype[type];
+#else
 	RListIter *iter;
+	RLibHandler *h;
 	r_list_foreach (lib->handlers, iter, h) {
 		if (h->type == type) {
 			return h;
 		}
 	}
+#endif
 	return NULL;
 }
 
@@ -224,6 +245,7 @@ R_API int r_lib_close(RLib *lib, const char *file) {
 			if (file) {
 				return ret;
 			}
+			break;
 		}
 	}
 	if (!file) {
@@ -231,30 +253,35 @@ R_API int r_lib_close(RLib *lib, const char *file) {
 	}
 	// delete similar plugin name
 	r_list_foreach (lib->plugins, iter, p) {
+		eprintf("similar p->file: %s\n", p->file);
 		if (strstr (p->file, file)) {
 			int ret = 0;
 			if (p->handler && p->handler->destructor) {
 				ret = p->handler->destructor (p,
 					p->handler->user, p->data);
 			}
+			eprintf("similar deleting: %s\n", p->file);
 			free (p->file);
 			r_list_delete (lib->plugins, iter);
+			{
+				const char *file_name = r_str_rstr (file, R_SYS_DIR);
+				if (file_name) {
+					ht_pp_delete (lib->plugins_ht, file_name + 1);
+				}
+			}
 			return ret;
 		}
 	}
 	return -1;
 }
 
-static bool __already_loaded(RLib *lib, const char *file) {
+static bool already_loaded(RLib *lib, const char *file) {
 	const char *fileName = r_str_rstr (file, R_SYS_DIR);
-	RLibPlugin *p;
-	RListIter *iter;
 	if (fileName) {
-		r_list_foreach (lib->plugins, iter, p) {
-			const char *pFileName = r_str_rstr (p->file, R_SYS_DIR);
-			if (pFileName && !strcmp (fileName, pFileName)) {
-				return true;
-			}
+		bool found;
+		RLibPlugin *p = ht_pp_find (lib->plugins_ht, fileName + 1, &found);
+		if (found && p) {
+			return true;
 		}
 	}
 	return false;
@@ -267,7 +294,7 @@ R_API int r_lib_open(RLib *lib, const char *file) {
 		return -1;
 	}
 
-	if (__already_loaded (lib, file)) {
+	if (already_loaded (lib, file)) {
 		R_LOG_ERROR ("Not loading library because it has already been loaded from '%s'", file);
 		return -1;
 	}
@@ -299,7 +326,7 @@ R_API int r_lib_open(RLib *lib, const char *file) {
 	return res;
 }
 
-static char *major_minor(const char *s) {
+char *major_minor(const char *s) {
 	char *a = strdup (s);
 	char *p = strchr (a, '.');
 	if (p) {
@@ -344,34 +371,26 @@ R_API int r_lib_open_ptr(RLib *lib, const char *file, void *handler, RLibStruct 
 	p->handler = r_lib_get_handler (lib, p->type);
 	p->free = stru->free;
 
+	// TODO: this should be bool
 	int ret = r_lib_run_handler (lib, p, stru);
 	if (ret == -1) {
-		R_LOG_ERROR ("Library handler has failed for '%s'", file);
+		R_LOG_DEBUG ("Library handler has failed for '%s'", file);
 		free (p->file);
 		free (p);
 		r_lib_dl_close (handler);
 	} else {
 		r_list_append (lib->plugins, p);
+		const char *fileName = r_str_rstr (file, R_SYS_DIR);
+		if (fileName) {
+			ht_pp_insert (lib->plugins_ht, strdup (fileName + 1), p);
+		}
 	}
-
 	return ret;
 }
 
 R_API bool r_lib_opendir(RLib *lib, const char *path) {
 #if WANT_DYLINK
 	r_return_val_if_fail (lib && path, false);
-#if R2__WINDOWS__
-	wchar_t file[1024];
-	WIN32_FIND_DATAW dir;
-	HANDLE fh;
-	wchar_t directory[MAX_PATH];
-	wchar_t *wcpath;
-	char *wctocbuff;
-#else
-	char file[1024];
-	struct dirent *de;
-	DIR *dh;
-#endif
 #ifdef R2_LIBR_PLUGINS
 	if (!path) {
 		path = R2_LIBR_PLUGINS;
@@ -381,7 +400,12 @@ R_API bool r_lib_opendir(RLib *lib, const char *path) {
 		return false;
 	}
 #if R2__WINDOWS__
-	wcpath = r_utf8_to_utf16 (path);
+	wchar_t file[1024];
+	WIN32_FIND_DATAW dir;
+	HANDLE fh;
+	wchar_t directory[MAX_PATH];
+	char *wctocbuff;
+	wchar_t *wcpath = r_utf8_to_utf16 (path);
 	if (!wcpath) {
 		return false;
 
@@ -398,6 +422,7 @@ R_API bool r_lib_opendir(RLib *lib, const char *path) {
 		wctocbuff = r_utf16_to_utf8 (file);
 		if (wctocbuff) {
 			if (__lib_dl_check_filename (wctocbuff)) {
+				R_LOG_DEBUG ("Loading %s", file);
 				r_lib_open (lib, wctocbuff);
 			} else {
 				R_LOG_DEBUG ("Cannot open %ls", dir.cFileName);
@@ -408,7 +433,9 @@ R_API bool r_lib_opendir(RLib *lib, const char *path) {
 	FindClose (fh);
 	free (wcpath);
 #else
-	dh = opendir (path);
+	char file[1024];
+	struct dirent *de;
+	DIR *dh = opendir (path);
 	if (!dh) {
 		R_LOG_DEBUG ("Cannot open directory '%s'", path);
 		return false;
@@ -422,7 +449,7 @@ R_API bool r_lib_opendir(RLib *lib, const char *path) {
 			R_LOG_DEBUG ("Loading %s", file);
 			r_lib_open (lib, file);
 		} else {
-			R_LOG_DEBUG ("Cannot open %s", file);
+			R_LOG_DEBUG ("Skip/Ignore %s", file);
 		}
 	}
 	closedir (dh);
@@ -431,22 +458,14 @@ R_API bool r_lib_opendir(RLib *lib, const char *path) {
 	return true;
 }
 
-R_API bool r_lib_add_handler(RLib *lib,
-	int type, const char *desc,
-	int (*cb)(RLibPlugin *, void *, void *),  /* constructor */
-	int (*dt)(RLibPlugin *, void *, void *),  /* destructor */
-	void *user)
-{
-	RLibHandler *h;
-	RListIter *iter;
+#define LibCB RLibLifeCycleCallback
+R_API bool r_lib_add_handler(RLib *lib, int type, const char *desc, LibCB cb, LibCB dt, void *user) {
+	r_return_val_if_fail (lib && desc, false);
+	// TODO r2_590 resolve using lib->handlers_ht
 	RLibHandler *handler = NULL;
-
-	r_list_foreach (lib->handlers, iter, h) {
-		if (type == h->type) {
-			R_LOG_DEBUG ("Redefining library handler constructor for %d", type);
-			handler = h;
-			break;
-		}
+	if (lib->handlers_bytype[type]) {
+		R_LOG_DEBUG ("Redefining library handler constructor for %d", type);
+		handler = lib->handlers_bytype[type];
 	}
 	if (!handler) {
 		handler = R_NEW (RLibHandler);
@@ -455,8 +474,14 @@ R_API bool r_lib_add_handler(RLib *lib,
 		}
 		handler->type = type;
 		r_list_append (lib->handlers, handler);
+		if (lib->handlers_bytype[type]) {
+			R_LOG_WARN ("we have a handler for this type already set");
+		}
+		lib->handlers_bytype[type] = handler;
 	}
-	strncpy (handler->desc, desc, sizeof (handler->desc)-1);
+	if (desc) {
+		r_str_ncpy (handler->desc, desc, sizeof (handler->desc) - 1);
+	}
 	handler->user = user;
 	handler->constructor = cb;
 	handler->destructor = dt;
@@ -464,14 +489,28 @@ R_API bool r_lib_add_handler(RLib *lib,
 	return true;
 }
 
+// R2_590 - delete handler by type doesnt make sense. lets do it by plug name instead
 R_API bool r_lib_del_handler(RLib *lib, int type) {
-	RLibHandler *h;
+	RLibHandler *h = NULL;
 	RListIter *iter;
+#if R2_590
+	// XXX slow - delete plugin by name, by filename or by type >? wtf this function is broken
+	{
+		bool found;
+		h = ht_pp_find (lib->plugins_ht, fileName, &found);
+		if (found && h) {
+			// ht_pp_delete (lib->plugins_ht, fileName);
+			return true;
+		}
+	}
+#endif
 	// TODO: remove all handlers for that type? or only one?
 	/* No _safe loop necessary because we return immediately after the delete. */
+	lib->handlers_bytype[type] = NULL;
 	r_list_foreach (lib->handlers, iter, h) {
 		if (type == h->type) {
 			r_list_delete (lib->handlers, iter);
+// TODOL delete handler from hashtable
 			return true;
 		}
 	}

@@ -20,6 +20,7 @@
 //Access both git and rvc functionality from one set of functions
 static RList *uncommited_rvc(Rvc *rvc);
 static bool save_rvc(Rvc *vc);
+extern const RvcPlugin r_vc_plugin_rvc;
 
 static void free_blobs(RList *blobs) {
 	if (blobs) {
@@ -77,7 +78,7 @@ static Rvc *rvc_rvc_new(const char *path) {
 		free (blobsp);
 		free (rvc->path);
 		free (rvc);
-		return false;
+		return NULL;
 	}
 	if (!r_sys_mkdirp (commitp) || !r_sys_mkdir (blobsp)) {
 		R_LOG_ERROR ("Can't create The RVC repo directory");
@@ -85,7 +86,7 @@ static Rvc *rvc_rvc_new(const char *path) {
 		free (rvc->path);
 		free (rvc);
 		free (blobsp);
-		return false;
+		return NULL;
 	}
 	free (commitp);
 	free (blobsp);
@@ -110,13 +111,7 @@ static Rvc *rvc_rvc_new(const char *path) {
 		free (rvc);
 		return NULL;
 	}
-	if (!rvc_use (rvc, RVC_TYPE_RVC)) {
-		sdb_unlink (rvc->db);
-		sdb_free (rvc->db);
-		free (rvc->path);
-		free (rvc);
-		return NULL;
-	}
+	rvc->p = &r_vc_plugin_rvc;
 	return rvc_save (rvc)? rvc : NULL;
 }
 
@@ -413,7 +408,7 @@ static RList *blobs_add(Rvc *rvc, const RList *files) {
 		RListIter *tmp;
 		//problamatic iterates even after finding the file but needed for directires.
 		r_list_foreach_safe (uncommitted, j, tmp, ucp) {
-			if (r_str_cmp (ucp, absp, r_str_len_utf8 (absp))) {
+			if (!r_str_startswith (ucp, absp)) {
 				continue;
 			}
 			found = true;
@@ -453,7 +448,7 @@ static bool rm_empty_dir(Rvc *rvc) {
 	RListIter *iter;
 	const char *f;
 	r_list_foreach (files, iter, f) {
-		if (r_str_cmp (f, path, r_str_len_utf8 (path))) {
+		if (!r_str_startswith (f, path)) {
 			rmdir (f);
 		}
 	}
@@ -579,8 +574,7 @@ static RList *get_blobs(Rvc *rvc, RList *ignore) {
 	RListIter *i;
 	char *hash;
 	r_list_foreach (commits, i, hash) {
-		char *commit_path = r_file_new (rvc->path, ".rvc", "commits",
-				hash, NULL);
+		char *commit_path = r_file_new (rvc->path, ".rvc", "commits", hash, NULL);
 		if (!commit_path) {
 			goto fail_ret;
 		}
@@ -599,8 +593,7 @@ static RList *get_blobs(Rvc *rvc, RList *ignore) {
 		bool found = false;
 		r_list_foreach (lines, j, ln) {
 			if (!found) {
-				found = !r_str_cmp (ln, COMMIT_BLOB_SEP,
-						r_str_len_utf8 (COMMIT_BLOB_SEP));
+				found = r_str_startswith (ln, COMMIT_BLOB_SEP);
 				continue;
 			}
 			RList *kv = r_str_split_list (ln, "=", 2);
@@ -720,8 +713,7 @@ R_API RList *branches_rvc(Rvc *rvc) {
 	SdbKv *kv;
 	ls_foreach (keys, i, kv) {
 		size_t bplen = r_str_len_utf8 (BPREFIX);
-		if (r_str_cmp ((char *)kv->base.key,
-					BPREFIX, bplen)) {
+		if (!r_str_startswith ((char *)kv->base.key, BPREFIX)) {
 			continue;
 		}
 		if (!r_list_append (ret, r_str_new ((char *)kv->base.key + bplen))
@@ -1003,6 +995,7 @@ R_API bool r_vc_reset(Rvc *rvc) {
 	r_list_free (uncommitted);
 	return ret;
 }
+
 static Sdb *vcdb_open(const char *rp) {
 	char *frp = r_file_new (rp, ".rvc", DBNAME, NULL);
 	if (!frp) {
@@ -1026,6 +1019,7 @@ static Rvc *open_rvc(const char *rp) {
 	if (rvc_repo_exists(rp)) {
 		Rvc *repo = R_NEW (Rvc);
 		if (repo) {
+			repo->p = &r_vc_plugin_rvc;
 			repo->db = vcdb_open (rp);
 			if (repo->db) {
 				repo->path = strdup(rp);
@@ -1035,12 +1029,13 @@ static Rvc *open_rvc(const char *rp) {
 			}
 		}
 	} else {
-		Rvc *repo = rvc_rvc_new(rp);
+		Rvc *repo = rvc_rvc_new (rp);
 		if (repo) {
+			repo->p = &r_vc_plugin_rvc;
 			return repo;
 		}
 	}
-	R_LOG_ERROR("Can't open rvc repo in: %s", rp);
+	R_LOG_ERROR ("Can't open rvc repo in: %s", rp);
 	return NULL;
 }
 
