@@ -144,7 +144,7 @@ static void addString(const ut8 *buf, ut64 offset, ut64 length, ParseStruct *par
 		return;
 	}
 
-	binstring->string = r_str_newlen ((char *) buf + offset, length);
+	binstring->string = r_str_ndup ((char *) buf + offset, length);
 	binstring->vaddr = binstring->paddr = offset;
 	binstring->ordinal = 0;
 	binstring->size = length;
@@ -306,7 +306,7 @@ static void addEntry(LuaFunction *func, ParseStruct *parseStruct){
 }
 
 static RList *entries(RBinFile *bf) {
-	r_return_val_if_fail (bf, NULL);
+	R_RETURN_VAL_IF_FAIL (bf, NULL);
 	if (bf->size < 20) {
 		return NULL;
 	}

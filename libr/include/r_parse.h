@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2009-2022 - pancake, nibble */
+/* radare - LGPL - Copyright 2009-2024 - pancake, nibble */
 
 #ifndef R2_PARSE_H
 #define R2_PARSE_H
@@ -94,7 +94,10 @@ extern RParsePlugin r_parse_plugin_z80_pseudo;
 extern RParsePlugin r_parse_plugin_tms320_pseudo;
 extern RParsePlugin r_parse_plugin_v850_pseudo;
 extern RParsePlugin r_parse_plugin_bpf_pseudo;
+extern RParsePlugin r_parse_plugin_stm8_pseudo;
 extern RParsePlugin r_parse_plugin_evm_pseudo;
+extern RParsePlugin r_parse_plugin_null_pseudo;
+extern RParsePlugin r_parse_plugin_tricore_pseudo;
 #endif
 
 #ifdef __cplusplus

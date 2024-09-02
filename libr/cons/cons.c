@@ -113,7 +113,7 @@ static RConsStack *cons_stack_dump(bool recreate) {
 }
 
 static void cons_stack_load(RConsStack *data, bool free_current) {
-	r_return_if_fail (data);
+	R_RETURN_IF_FAIL (data);
 	if (free_current) {
 		// double free
 		free (C->buffer);
@@ -642,43 +642,35 @@ R_API void r_cons_enable_highlight(const bool enable) {
 }
 
 R_API bool r_cons_enable_mouse(const bool enable) {
-	if ((I->mouse && enable) || (!I->mouse && !enable)) {
-		return I->mouse;
-	}
+	bool enabled = I->mouse;
 #if R2__WINDOWS__
+	HANDLE h = GetStdHandle (STD_INPUT_HANDLE);
+	DWORD mode = 0;
+	GetConsoleMode (h, &mode);
+	mode |= ENABLE_EXTENDED_FLAGS;
+	mode |= enable
+		? (mode | ENABLE_MOUSE_INPUT) & ~ENABLE_QUICK_EDIT_MODE
+		: (mode & ~ENABLE_MOUSE_INPUT) | ENABLE_QUICK_EDIT_MODE;
+	if (SetConsoleMode (h, mode)) {
+		I->mouse = enable;
+	}
+#else
 	if (I->vtmode == 2) {
-#endif
 		const char *click = enable
 			? "\x1b[?1000;1006;1015h"
 			: "\x1b[?1000;1006;1015l";
 			// : "\x1b[?1001r\x1b[?1000l";
 		// : "\x1b[?1000;1006;1015l";
 		// const char *old = enable ? "\x1b[?1001s" "\x1b[?1000h" : "\x1b[?1001r" "\x1b[?1000l";
-		bool enabled = I->mouse;
 		const size_t click_len = strlen (click);
 		if (write (2, click, click_len) != click_len) {
-			return false;
+			enabled = false;
+		} else {
+			I->mouse = enable;
 		}
-		I->mouse = enable;
-		return enabled;
-#if R2__WINDOWS__
 	}
-	DWORD mode;
-	HANDLE h;
-	bool enabled = I->mouse;
-	h = GetStdHandle (STD_INPUT_HANDLE);
-	GetConsoleMode (h, &mode);
-	mode |= ENABLE_EXTENDED_FLAGS;
-	mode = enable
-		? (mode | ENABLE_MOUSE_INPUT) & ~ENABLE_QUICK_EDIT_MODE
-		: (mode & ~ENABLE_MOUSE_INPUT) | ENABLE_QUICK_EDIT_MODE;
-	if (SetConsoleMode (h, mode)) {
-		I->mouse = enable;
-	}
-	return enabled;
-#else
-	return false;
 #endif
+	return enabled;
 }
 
 R_API RCons *r_cons_new(void) {
@@ -1433,7 +1425,7 @@ R_API int r_cons_get_column(void) {
 
 /* final entrypoint for adding stuff in the buffer screen */
 R_API int r_cons_write(const char *str, int len) {
-	r_return_val_if_fail (str && len >= 0, -1);
+	R_RETURN_VAL_IF_FAIL (str && len >= 0, -1);
 	if (len < 1) {
 		return 0;
 	}
@@ -1475,7 +1467,7 @@ R_API void r_cons_memset(char ch, int len) {
 }
 
 R_API void r_cons_print(const char *str) {
-	r_return_if_fail (str);
+	R_RETURN_IF_FAIL (str);
 	if (!I || I->null) {
 		return;
 	}

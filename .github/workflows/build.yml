@@ -20,6 +20,31 @@ jobs:
         name: linux-wasi
         path: radare2-*-wasi.zip
 
+  # WASI API
+  linux-wasi-api:
+    runs-on: ubuntu-20.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Installing with symlinks
+      run: sys/wasi-api.sh
+    - uses: actions/upload-artifact@v4
+      with:
+        name: linux-wasi-api
+        path: radare2-*-wasi.zip
+  # capstone-next
+  linux-csnext:
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Installing with symlinks
+      run: |
+          cp -f dist/plugins.cs6.cfg plugins.cfg
+          ./configure-plugins
+          sys/install.sh --with-capstone-next
+      continue-on-error: true
+
   # Source Tarballs
   tarball:
     runs-on: ubuntu-20.04
@@ -170,9 +195,9 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            macos: 12
+            macos: 13
           - arch: x86_64
-            macos: 11
+            macos: 12
     runs-on: macos-${{ matrix.macos }}
     steps:
     - name: Checkout
@@ -201,7 +226,7 @@ jobs:
         include:
           - type: cydia
             sdk: true
-    runs-on: macos-11
+    runs-on: macos-12
     steps:
     - uses: actions/checkout@v4
     - name: Install pkg-config/ldid2 with Homebrew

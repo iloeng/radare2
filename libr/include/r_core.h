@@ -302,6 +302,10 @@ typedef struct {
 	int y;
 } VisualMark;
 
+#if R2_USE_NEW_ABI
+typedef struct RCorePriv RCorePriv;
+#endif
+
 struct r_core_t {
 	RBin *bin;
 	RConfig *config;
@@ -412,6 +416,11 @@ struct r_core_t {
 	int (*r_main_ragg2)(int argc, const char **argv);
 	int (*r_main_rasm2)(int argc, const char **argv);
 	int (*r_main_rax2)(int argc, const char **argv);
+#if R2_USE_NEW_ABI
+	int skiplines; // used only for disasm
+	void *priv;
+	bool esil_anal_stop;
+#endif
 };
 
 // maybe move into RAnal
@@ -536,7 +545,7 @@ R_API int r_core_visual_anal_classes(RCore *core);
 R_API int r_core_visual_types(RCore *core);
 R_API int r_core_visual(RCore *core, const char *input);
 R_API void r_core_visual_find(RCore *core, RAGraph *g);
-R_API int r_core_visual_graph(RCore *core, RAGraph *g, RAnalFunction *_fcn, int is_interactive);
+R_API int r_core_visual_graph(RCore *core, RAGraph *g, RAnalFunction *_fcn, int mode);
 R_API void r_core_visual_browse(RCore *core, const char *arg);
 R_API int r_core_visual_cmd(RCore *core, const char *arg);
 R_API void r_core_visual_seek_animation(RCore *core, ut64 addr);
@@ -689,7 +698,9 @@ R_API int r_core_anal_graph(RCore *core, ut64 addr, int opts);
 R_API int r_core_anal_graph_fcn(RCore *core, char *input, int opts);
 R_API RList* r_core_anal_graph_to(RCore *core, ut64 addr, int n);
 R_API int r_core_anal_ref_list(RCore *core, int rad);
+#if !R2_USE_NEW_ABI
 R_API int r_core_anal_all(RCore *core);
+#endif
 R_API RList* r_core_anal_cycles(RCore *core, int ccl);
 typedef struct r_vec_RVecAnalRef_t RVecAnalRef;
 R_API RVecAnalRef *r_core_anal_fcn_get_calls(RCore *core, RAnalFunction *fcn); // get all calls from a function
@@ -731,6 +742,7 @@ enum r_pdu_condition_t {
 };
 R_API int r_core_print_disasm(RCore *core, ut64 addr, ut8 *buf, int len, int count, enum r_pdu_condition_t pdu_condition_type, const void *pdu_condition, bool count_bytes, bool json, PJ *pj, RAnalFunction *pdf);
 R_API int r_core_print_disasm_json(RCore *core, ut64 addr, ut8 *buf, int len, int lines, PJ *pj);
+R_IPI int r_core_print_disasm_json_ipi(RCore *core, ut64 addr, ut8 *buf, int len, int lines, PJ *pj, const void *pdu_condition); // R2_600 - replace with api
 R_API int r_core_print_disasm_instructions_with_buf(RCore *core, ut64 address, ut8 *buf, int nb_bytes, int nb_opcodes);
 R_API int r_core_print_disasm_instructions(RCore *core, int nb_bytes, int nb_opcodes);
 R_API int r_core_print_disasm_all(RCore *core, ut64 addr, int l, int len, int mode);

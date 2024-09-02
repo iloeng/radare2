@@ -37,7 +37,7 @@ WGET?=curl -o
 endif
 
 ifeq ($(CS_RELEASE),1)
-CS_VER=5.0
+CS_VER=5.0.3
 CS_TAR=https://codeload.github.com/capstone-engine/capstone/tar.gz/$(CS_VER)
 #CS_TAR=http://capstone-engine.org/download/$(CS_VER)/capstone-$(CS_VER).tgz
 CS_PATCHES=0
@@ -56,7 +56,7 @@ ifeq ($(USE_CS4),1)
 CS_TIP=0efa3cc530ea188c0e03c945ab884ee19dd16342
 CS_BRA=v4
 else
-CS_TIP=11a2ea286336c52c485da8256ea70148b04a990c
+CS_TIP=00b961a680c488081a165cc31e98699d45a0a515
 CS_BRA=v5
 endif
 endif
@@ -218,6 +218,11 @@ install-symlink symstall:
 
 uninstall deinstall:
 	rm -f ${DESTDIR}${LIBDIR}/libr_shlr.${EXT_AR}
+
+.PHONY: capstone capstone-sync capstone-build capstone-clean capstone-patch capstone-pull
+
+capstone-pull:
+	$(MAKE) CS_RELEASE=1 WITHOUT_PULL=0 USE_CAPSTONE=0 WANT_CAPSTONE=1 capstone
 
 ifeq ($(WANT_CAPSTONE),0)
 capstone:

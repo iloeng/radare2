@@ -94,29 +94,30 @@ static RCoreHelpMessage help_msg_single_quote = {
 	"'", "# run a command without evaluating any special character", "",
 	"'", "?e hello @ world", "print the given string, including the @ sign and the rest (r2.call)",
 	"'", "0x123'?v $$", "run the '?v $$' command in the 0x123 offset (same as r2.callAt)",
+	"'", "@entry0'?v $$", "same as '0x but supports non numeric offsets",
 	NULL
 };
 
 static RCoreHelpMessage help_msg_at_at_at = {
 	"@@@", "", " # foreach offset+size iterator command:",
 	"x", " @@@=", "[addr] [size] ([addr] [size] ...)",
-	"x", " @@@C:cmd", "comments matching",
-	"x", " @@@E", "exports",
-	"x", " @@@F", "functions (set fcn size which may be incorrect if not linear)",
-	"x", " @@@F:glob", "functions matching glob expression",
-	"x", " @@@M", "dbg.maps (See ?$?~size)",
-	"x", " @@@S", "sections",
-	"x", " @@@SS", "segments (same as @@@G)",
 	"x", " @@@b", "basic blocks of current function",
+	"x", " @@@C:cmd", "comments matching",
 	"x", " @@@c:cmd", "Same as @@@=`cmd`, without the backticks",
 	"x", " @@@e", "entries",
+	"x", " @@@E", "exports",
 	"x", " @@@f", "flags",
+	"x", " @@@F", "functions (set fcn size which may be incorrect if not linear)",
+	"x", " @@@F:glob", "functions matching glob expression",
 	"x", " @@@f:hit*", "flags matching glob expression",
 	"x", " @@@i", "imports",
+	"x", " @@@M", "dbg.maps (See ?$?~size)",
 	"x", " @@@m", "io.maps",
 	"x", " @@@r", "registers",
 	"x", " @@@R", "relocs",
+	"x", " @@@S", "sections",
 	"x", " @@@s", "symbols",
+	"x", " @@@SS", "segments (same as @@@G)",
 	"x", " @@@t", "threads",
 	"x", " @@@z", "ztrings",
 	// TODO: Add @@k sdb-query-expression-here
@@ -174,10 +175,11 @@ static RCoreHelpMessage help_msg_env = {
 
 static RCoreHelpMessage help_msg_exclamation = {
 	"Usage:", "!<cmd>", "  Run given command as in system(3)",
-	"!", "", "list all historic commands",
+	"!", "", "list all commands in the shell history",
 	"!", "ls", "execute 'ls' in shell",
 	"!*", "r2p x", "run r2 command via r2pipe in current session",
-	"!!", "", "save command history to hist file",
+	"!.", "", "save command history to hist file",
+	"!!", "", "list commands used in current session",
 	"!!", "ls~txt", "print output of 'ls' and grep for 'txt'",
 	"!!!", "cmd [args|$type]", "adds the autocomplete value",
 	"!!!-", "cmd [args]", "removes the autocomplete value",
@@ -204,6 +206,7 @@ static RCoreHelpMessage help_msg_root = {
 	"/", "[?]", "search for bytes, regexps, patterns, ..",
 	"!", "[?] [cmd]", "run given command as in system(3)",
 	"#", "[?] !lang [..]", "Hashbang to run an rlang script",
+	"{", "[?] ...}", "run a command using the json syntax for r2pipe2",
 	"a", "[?]", "analysis commands",
 	"b", "[?]", "display or change the block size",
 	"c", "[?] [arg]", "compare block with given data",
@@ -250,6 +253,7 @@ static RCoreHelpMessage help_msg_question_i = {
 	"?im", " [msg]", "like ?ie, but using RCons.message (clear-screen + press-any-key)",
 	"?ik", "", "press any key",
 	"?ip", " ([path])", "interactive hud mode to find files in given path",
+	"?iu", " (ui-expr)", "input using user interface expression",
 	NULL
 };
 
@@ -293,12 +297,7 @@ static RCoreHelpMessage help_msg_question = {
 	"?f", " [num] [str]", "map each bit of the number as flag string index",
 	"?F", "", "flush cons output",
 	"?h", " [str]", "calculate hash for given string",
-	"?i", "[ynmkp] arg", "prompt for number or Yes,No,Msg,Key,Path and store in $$?",
-	"?ik", "", "press any key input dialog",
-	"?im", " message", "show message centered in screen",
-	"?in", " prompt", "noyes input prompt",
-	"?ip", " prompt", "path input prompt",
-	"?iy", " prompt", "yesno input prompt",
+	"?i", "[?] arg", "prompt for number or Yes,No,Msg,Key,Path and store in $$?",
 	"?j", " arg", "same as '? num' but in JSON",
 	"?l", "[q] str", "returns the length of string ('q' for quiet, just set $?)",
 	"?o", " num", "get octal value",
@@ -457,7 +456,7 @@ static char *filterFlags(RCore *core, const char *msg) {
 			// find }
 			end = strchr (dollar + 2, '}');
 			if (end) {
-				word = r_str_newlen (dollar+2, end-dollar-2);
+				word = r_str_ndup (dollar + 2, end - dollar - 2);
 				end++;
 			} else {
 				msg = dollar + 1;
@@ -473,7 +472,7 @@ static char *filterFlags(RCore *core, const char *msg) {
 			if (!end) {
 				end = dollar + strlen (dollar);
 			}
-			word = r_str_newlen (dollar+1, end-dollar-1);
+			word = r_str_ndup (dollar + 1, end - dollar - 1);
 		}
 		if (end && word) {
 			ut64 val = r_num_math (core->num, word);
@@ -632,6 +631,26 @@ R_API void r_core_clippy(RCore *core, const char *msg) {
 	r_cons_printf (f, l, s, msg, s, l);
 	free (l);
 	free (s);
+}
+
+#include "visual_riu.inc.c"
+
+static int cmd_qiu(RCore *core, const char *input) {
+	if (!*input || *input == '?') {
+		r_cons_printf ("Usage: ?iu fieldname(type,command,value)\n");
+		r_cons_printf ("  Types: string, button, title, run\n");
+		r_cons_printf ("Examples:\n");
+		r_cons_printf ("'?iu name(string,?i;yp,test) addr(string,f~...) ok(button) cancel(button)\n");
+		r_cons_printf ("'?iu addr(string,f~...) hexdump(run,x 32@k:riu.addr) ok(button)\n");
+		r_cons_printf ("Values for every field are saved in the global SdbKv database (see `k` command)\n");
+		return 0;
+	}
+	RIU *riu = riu_new (core, input);
+	do {
+		riu_render (riu);
+	} while (riu_input (riu));
+	riu_free (riu);
+	return 0;
 }
 
 static int cmd_help(void *data, const char *input) {
@@ -821,7 +840,7 @@ static int cmd_help(void *data, const char *input) {
 		}
 		break;
 	case 'o': // "?o"
-		n = r_num_math (core->num, input+1);
+		n = r_num_math (core->num, input + 1);
 		r_cons_printf ("0%"PFMT64o"\n", n);
 		break;
 	case 'T': // "?T"
@@ -1054,7 +1073,7 @@ static int cmd_help(void *data, const char *input) {
 			}
 		} else {
 			if (input[1]) { // ?=
-				r_num_math (core->num, input+1);
+				r_num_math (core->num, input + 1);
 			} else {
 				r_cons_printf ("0x%"PFMT64x"\n", core->num->value);
 			}
@@ -1156,7 +1175,7 @@ static int cmd_help(void *data, const char *input) {
 			break;
 		case 'j': // "?Vj"
 			{
-				PJ *pj = pj_new ();
+				PJ *pj = r_core_pj_new (core);
 				pj_o (pj);
 				pj_ks (pj, "arch", R_SYS_ARCH);
 				pj_ks (pj, "os", R_SYS_OS);
@@ -1402,7 +1421,7 @@ static int cmd_help(void *data, const char *input) {
 			  }
 			break;
 		case ' ': {
-			const char *msg = r_str_trim_head_ro (input+1);
+			const char *msg = r_str_trim_head_ro (input + 1);
 			// TODO: replace all ${flagname} by its value in hexa
 			char *newmsg = filterFlags (core, msg);
 			r_str_unescape (newmsg);
@@ -1472,7 +1491,7 @@ static int cmd_help(void *data, const char *input) {
 		}
 		break;
 	case '_': // "?_" hud input
-		r_core_yank_hud_file (core, input+1);
+		r_core_yank_hud_file (core, input + 1);
 		break;
 	case 'i': // "?i" input num
 		r_cons_set_raw(0);
@@ -1520,6 +1539,9 @@ static int cmd_help(void *data, const char *input) {
 			case 'y': // "?iy"
 				 for (input += 2; *input == ' '; input++);
 				 r_core_return_value (core, r_cons_yesno (1, "%s? (Y/n)", input));
+				 break;
+			case 'u':
+				 r_core_return_value (core, cmd_qiu (core, r_str_trim_head_ro (input + 2)));
 				 break;
 			case 'n': // "?in"
 				 for (input += 2; *input == ' '; input++);
@@ -1587,5 +1609,62 @@ static int cmd_help(void *data, const char *input) {
 		break;
 	}
 	return 0;
+}
+
+static RCoreHelpMessage help_msg_h = {
+	"help", "", "Show a friendly message",
+	"head", " [n] [file]", "Print first n lines in file (default n=5)",
+	NULL
+};
+
+static int cmd_head(void *data, const char *_input) { // "head"
+	RCore *core = (RCore *)data;
+	int lines = 5;
+	char *input = strdup (_input);
+	char *arg = strchr (input, ' ');
+	char *tmp, *count;
+	if (arg) {
+		arg = (char *)r_str_trim_head_ro (arg + 1); // contains "count filename"
+		count = strchr (arg, ' ');
+		if (count) {
+			*count = 0;	// split the count and file name
+			tmp = (char *)r_str_trim_head_ro (count + 1);
+			lines = atoi (arg);
+			arg = tmp;
+		}
+	}
+	switch (*input) {
+	case '?': // "head?"
+		r_core_cmd_help (core, help_msg_h);
+		break;
+	default: // "head"
+		if (!arg) {
+			arg = "";
+		}
+		if (r_fs_check (core->fs, arg)) {
+			r_core_cmdf (core, "md %s", arg);
+		} else {
+			char *res = r_syscmd_head (arg, lines);
+			if (res) {
+				r_cons_print (res);
+				free (res);
+			}
+		}
+		break;
+	}
+	free (input);
+	return 0;
+}
+
+static int cmd_h(void *data, const char *_input) { // "head"
+	if (r_str_startswith (_input, "ead")) {
+		return cmd_head (data, _input);
+	}
+	if (r_str_startswith (_input, "elp")) {
+		r_cons_printf ("%s\n", help_message);
+		return 0;
+	}
+	r_core_cmd_help ((RCore*)data, help_msg_h);
+	return -1; // invalid command
 }
 #endif

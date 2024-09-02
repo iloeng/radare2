@@ -161,7 +161,11 @@ static int string_scan_range(RList *list, RBinFile *bf, int min, const ut64 from
 			int outlen = len * 4;
 			ut8 *out = calloc (len, 4);
 			if (out) {
+#if R2_USE_NEW_ABI
+				int res = r_charset_encode_str (ch, out, outlen, buf, len, false);
+#else
 				int res = r_charset_encode_str (ch, out, outlen, buf, len);
+#endif
 				int i;
 				// TODO unknown chars should be translated to null bytes
 				for (i = 0; i < res; i++) {
@@ -213,7 +217,6 @@ static int string_scan_range(RList *list, RBinFile *bf, int min, const ut64 from
 				if (!addr_aligned) {
 					is_wide32le = false;
 				}
-				///is_wide32be &= (n1 < 0xff && n11 < 0xff); // false; // n11 < 0xff;
 				if (is_wide32le && addr_aligned) {
 					str_type = R_STRING_TYPE_WIDE32; // asume big endian,is there little endian w32?
 				} else {
@@ -222,11 +225,9 @@ static int string_scan_range(RList *list, RBinFile *bf, int min, const ut64 from
 					str_type = is_wide? R_STRING_TYPE_WIDE: R_STRING_TYPE_ASCII;
 				}
 			} else {
-				if (rc > 1) {
-					str_type = R_STRING_TYPE_UTF8; // could be charset if set :?
-				} else {
-					str_type = R_STRING_TYPE_ASCII;
-				}
+				str_type = (rc > 1)
+					? R_STRING_TYPE_UTF8
+					: R_STRING_TYPE_ASCII;
 			}
 		} else if (type == R_STRING_TYPE_UTF8) {
 			str_type = R_STRING_TYPE_ASCII; // initial assumption
@@ -319,7 +320,7 @@ static int string_scan_range(RList *list, RBinFile *bf, int min, const ut64 from
 			const char *tmpstr = r_strbuf_get (sb);
 			size_t tmplen = r_strbuf_length (sb);
 			// reduce false positives
-			int j, num_blocks, *block_list;
+			int j, num_blocks;
 			int *freq_list = NULL, expected_ascii, actual_ascii, num_chars;
 			if (str_type == R_STRING_TYPE_ASCII) {
 				for (j = 0; j < tmplen; j++) {
@@ -336,7 +337,7 @@ static int string_scan_range(RList *list, RBinFile *bf, int min, const ut64 from
 			case R_STRING_TYPE_WIDE:
 			case R_STRING_TYPE_WIDE32:
 				num_blocks = 0;
-				block_list = r_utf_block_list ((const ut8*)tmpstr, tmplen - 1,
+				int *block_list = r_utf_block_list ((const ut8*)tmpstr, tmplen - 1,
 						str_type == R_STRING_TYPE_WIDE? &freq_list: NULL);
 				if (block_list) {
 					for (j = 0; block_list[j] != -1; j++) {
@@ -357,11 +358,11 @@ static int string_scan_range(RList *list, RBinFile *bf, int min, const ut64 from
 					if (actual_ascii > expected_ascii) {
 						ascii_only = true;
 						needle = str_start;
-						free (block_list);
+						R_FREE (block_list);
 						continue;
 					}
 				}
-				free (block_list);
+				R_FREE (block_list);
 				if (num_blocks > R_STRING_MAX_UNI_BLOCKS) {
 					needle++;
 					continue;
@@ -377,6 +378,7 @@ static int string_scan_range(RList *list, RBinFile *bf, int min, const ut64 from
 			bs->ordinal = bf->string_count++;
 			if (limit > 0 && bf->string_count > limit) {
 				R_LOG_WARN ("el.limit for strings");
+				R_FREE (bs);
 				break;
 			}
 			// TODO: move into adjust_offset

@@ -290,7 +290,7 @@ static void showFormat(RCore *core, const char *name, int mode) {
 		if (fmt) {
 			r_str_trim (fmt);
 			if (mode == 'j') {
-				PJ *pj = pj_new ();
+				PJ *pj = r_core_pj_new (core);
 				if (!pj) {
 					return;
 				}
@@ -375,17 +375,22 @@ static int cmd_tac(void *data, const char *_input) { // "tac"
 }
 
 static int cmd_tail(void *data, const char *_input) { // "tail"
+	char *tmp, *arg;
 	char *input = strdup (_input);
 	RCore *core = (RCore *)data;
 	int lines = 5;
-	char *tmp, *arg = strchr (input, ' ');
+	if (r_str_startswith (input, "ail")) {
+		arg = input + 3;
+	} else {
+		arg = strchr (input, ' ');
+	}
 	if (arg) {
-		arg = (char *)r_str_trim_head_ro (arg + 1); 	// contains "count filename"
+		arg = (char *)r_str_trim_head_ro (arg);
 		char *count = strchr (arg, ' ');
 		if (count) {
-			*count = 0;	// split the count and file name
+			*count = 0; // split the count and file name
 			tmp = (char *)r_str_trim_head_ro (count + 1);
-			lines = atoi (arg);
+			lines = r_num_math (core->num, arg);
 			arg = tmp;
 		}
 	}
@@ -476,7 +481,7 @@ static void cmd_type_noreturn(RCore *core, const char *input) {
 static Sdb *TDB_ = NULL; // HACK
 
 static bool stdifstruct(void *user, const char *k, const char *v) {
-	r_return_val_if_fail (TDB_, false);
+	R_RETURN_VAL_IF_FAIL (TDB_, false);
 	if (!strcmp (v, "struct") && !r_str_startswith (k, "typedef")) {
 		return true;
 	}
@@ -671,7 +676,7 @@ static void printFunctionTypeC(RCore *core, const char *input) {
 
 static void printFunctionType(RCore *core, const char *input) {
 	Sdb *TDB = core->anal->sdb_types;
-	PJ *pj = pj_new ();
+	PJ *pj = r_core_pj_new (core);
 	if (!pj) {
 		return;
 	}
@@ -793,12 +798,12 @@ static bool print_typelist_r_cb(void *p, const char *k, const char *v) {
 }
 
 static bool print_typelist_json_cb(void *p, const char *k, const char *v) {
-	r_return_val_if_fail (p && k, false);
+	R_RETURN_VAL_IF_FAIL (p && k, false);
 	RCore *core = (RCore *)p;
 	if (!v) {
 		v = "";
 	}
-	PJ *pj = pj_new ();
+	PJ *pj = r_core_pj_new (core);
 	pj_o (pj);
 	Sdb *sdb = core->anal->sdb_types;
 	char *sizecmd = r_str_newf ("type.%s.size", k);
@@ -1275,7 +1280,7 @@ static int cmd_type(void *data, const char *input) {
 				SdbKv *kv;
 				SdbListIter *iter;
 				SdbList *l = sdb_foreach_list (TDB, true);
-				PJ *pj = pj_new ();
+				PJ *pj = r_core_pj_new (core);
 				pj_o (pj);
 				ls_foreach (l, iter, kv) {
 					if (!strcmp (sdbkv_value (kv), "enum")
@@ -1307,7 +1312,7 @@ static int cmd_type(void *data, const char *input) {
 				r_core_cmd_help_contains (core, help_msg_te, "tej");
 			} else { // "tej ENUM"
 				RListIter *iter;
-				PJ *pj = pj_new ();
+				PJ *pj = r_core_pj_new (core);
 				RTypeEnum *member;
 				pj_o (pj);
 				if (member_name) {
@@ -1855,7 +1860,7 @@ static int cmd_type(void *data, const char *input) {
 		if (!input[1] || input[1] == 'j') {
 			PJ *pj = NULL;
 			if (input[1] == 'j') {
-				pj = pj_new ();
+				pj = r_core_pj_new (core);
 				pj_o (pj);
 			}
 			char *name = NULL;

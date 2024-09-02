@@ -131,15 +131,15 @@ s 0x100000da0
 "afc amd64"
 s-
 s 0x100000da0
-"afvb -1 var_1h int64_t"
-"afvb -16 var_10h int64_t"
-"afvb -20 var_14h int64_t"
-"afvb -24 var_18h int64_t"
-"afvb -32 var_20h int64_t"
-"afvb -40 var_28h int64_t"
+'afvb -1 var_1h int64_t
+'afvb -16 var_10h int64_t
+'afvb -20 var_14h int64_t
+'afvb -24 var_18h int64_t
+'afvb -32 var_20h int64_t
+'afvb -40 var_28h int64_t
 s-
 s 0x100000da0
-"afvr rdi arg1 int64_t"
+'afvr rdi arg1 int64_t
 s-
 axd 0x100000ec0 0x100000dd0
 axc 0x100000de4 0x100000de2
@@ -2029,7 +2029,7 @@ afvb*~ImageHandle
 afvb*~0x10002d8d
 EOF
 EXPECT=<<EOF
-"afvb 8 ImageHandle blah"
+'afvb 8 ImageHandle blah
 s 0x10002d8d
 EOF
 RUN
@@ -2367,7 +2367,7 @@ EXPECT=<<EOF
   {
     "opcode": "pushf",
     "disasm": "pushf",
-    "pseudo": "push ()",
+    "pseudo": "push (cpuflags)",
     "description": "push flags register onto the stack",
     "mnemonic": "pushf",
     "mask": "ffff",
@@ -2705,6 +2705,9 @@ minbound: 0x00000000
 maxbound: 0x00000007
 is-lineal: true
 end-bbs: 0
+maxbbins: 1
+midbbins: 0.50
+ratbbins: 2.00
 noreturn: false
 in-degree: 0
 out-degree: 0
@@ -2764,6 +2767,9 @@ minbound: 0x00000000
 maxbound: 0x0000000d
 is-lineal: false
 end-bbs: 1
+maxbbins: 3
+midbbins: 2.50
+ratbbins: 1.20
 noreturn: false
 in-degree: 0
 out-degree: 0
@@ -2784,7 +2790,6 @@ args: 0
 \ 0x0000000c      cc             int3
 
 
-[0x00000000]>  # fcn.00000000 ();
         .------------------------.
         |  0x0                   |
         | 16: fcn.00000000 ();   |
@@ -2839,6 +2844,9 @@ minbound: 0x00000000
 maxbound: 0x0000000e
 is-lineal: false
 end-bbs: 0
+maxbbins: 3
+midbbins: 2.50
+ratbbins: 1.20
 noreturn: false
 in-degree: 0
 out-degree: 0
@@ -2859,7 +2867,6 @@ args: 0
 \ 0x0000000c      ebf6           jmp 4
 | // true: 0x00000004
 
-[0x00000000]>  # fcn.00000000 ();
              .------------------------.
              |  0x0                   |
              | 17: fcn.00000000 ();   |
@@ -2922,6 +2929,9 @@ minbound: 0x00000000
 maxbound: 0x0000000e
 is-lineal: false
 end-bbs: 0
+maxbbins: 3
+midbbins: 1.67
+ratbbins: 1.80
 noreturn: false
 in-degree: 0
 out-degree: 0
@@ -2945,7 +2955,6 @@ args: 0
 | 0x00000005      ebfd           jmp 4
 | // true: 0x00000004
 
-[0x00000000]>  # fcn.00000000 ();
          .------------------------.
          |  0x0                   |
          | 17: fcn.00000000 ();   |
@@ -3014,6 +3023,9 @@ minbound: 0x00000000
 maxbound: 0x00000013
 is-lineal: false
 end-bbs: 0
+maxbbins: 3
+midbbins: 1.75
+ratbbins: 1.71
 noreturn: false
 in-degree: 0
 out-degree: 0
@@ -3041,7 +3053,6 @@ args: 0
 \ 0x00000011      ebf0           jmp 3
 | // true: 0x00000003
 
-[0x00000000]>  # fcn.00000000 ();
         .--------------------------.
         |  0x0                     |
         | 24: fcn.00000000 ();     |
@@ -3227,7 +3238,7 @@ s 0x00003cb8-0x30
 pd 20~env
 EOF
 EXPECT=<<EOF
-0x00003cb8      call sym.imp.getenv ; rsp=0x177fe8 -> 0x464c457f ; rip=0x3430 -> 0x97fa25ff
+0x00003cb8      call sym.imp.getenv ; rsp=0x177fe8 -> 0x464c457f ; [0x00177fe8:8] = 0x3cbd ; rip=0x3430 -> 0x97fa25ff
                     ; char *getenv("COLUMNS")
 EOF
 RUN
@@ -3895,7 +3906,7 @@ EXPECT=<<EOF
 |           ; var int64_t var_bh @ rbp-0xb
 |           ; arg int64_t arg_ch @ rsp+0xc
 |           ; var int64_t var_4h @ rsp+0x4
-|           0x00000000      54             push  (rsp)
+|           0x00000000      54             push (rsp)
 |           0x00000001      4889e5         rbp = rsp
 |           0x00000004      b402           ah = 2
 |           0x00000006      66b83333       ax = 0x3333
@@ -3971,8 +3982,7 @@ EXPECT=<<EOF
 | 0x00000005      ebf9           jmp 0
 | // true: 0x00000000
 
-[0x00000003]>  # fcn.00000003 ();
- ----.
+.----.
 |    |
 |.----------------------------------------.    .-----------------------.
 ||  0x0                                   |    |  0x3                  |

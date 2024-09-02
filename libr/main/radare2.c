@@ -246,6 +246,7 @@ static int main_help(int line) {
 		" R2_COLOR        sets the initial value for 'scr.color'. set to 0 for no color\n"
 		" R2_ARGS         ignore cli arguments and use these ones instead\n"
 		" R2_DEBUG        if defined, show error messages and crash signal.\n"
+		" R2_PAPI_SCRIPT  path to the custom r2papi csript\n"
 		" R2_DEBUG_NOPAPI do not load r2papi in the -j qjs shell\n"
 		" R2_DEBUG_ASSERT set a breakpoint when hitting an assert.\n"
 		" R2_IGNVER       load plugins ignoring the specified version. (be careful)\n"
@@ -1426,7 +1427,13 @@ R_API int r_main_radare2(int argc, const char **argv) {
 					free (escaped_arg);
 					opt.ind++;
 				}
-				mr.pfile = strdup (mr.file);
+				if (mr.file) {
+					mr.pfile = strdup (mr.file);
+				} else {
+					R_LOG_ERROR ("Cannot find program to spawn");
+					ret = 1;
+					goto beach;
+				}
 			}
 		}
 		if (!mr.debug || mr.debug == 2) {
@@ -1695,14 +1702,23 @@ R_API int r_main_radare2(int argc, const char **argv) {
 			const char *path = uri_splitter? uri_splitter + 3: f;
 			if (r_file_exists (path)) {
 				// TODO: should 'q' unset the interactive bit?
-				bool isInteractive = r_cons_is_interactive ();
-				if (isInteractive && r_cons_yesno ('n', "Do you want to run the '%s' script? (y/N) ", path)) {
+				const bool isint = r_cons_is_interactive ();
+				if (isint && r_cons_yesno ('n', "Do you want to run the '%s' script? (y/N) ", path)) {
 					r_core_cmd_file (r, path);
 				}
 			}
 			free (f);
 		}
 	} else {
+		if (mr.asmarch) {
+			r_config_set (r->config, "asm.arch", mr.asmarch);
+		}
+		if (mr.asmbits) {
+			r_config_set (r->config, "asm.bits", mr.asmbits);
+		}
+		if (mr.asmos) {
+			r_config_set (r->config, "asm.os", mr.asmos);
+		}
 		r_core_block_read (r);
 	}
 	{

@@ -248,7 +248,7 @@ leave:
 }
 
 R_API bool r_core_bin_load_structs(RCore *core, const char *file) {
-	r_return_val_if_fail (core && core->io, false);
+	R_RETURN_VAL_IF_FAIL (core && core->io, false);
 	if (!file) {
 		int fd = r_io_fd_get_current (core->io);
 		RIODesc *desc = r_io_desc_get (core->io, fd);
@@ -284,7 +284,7 @@ R_API bool r_core_bin_set_by_name(RCore *core, const char *name) {
 }
 
 R_API bool r_core_bin_set_env(RCore *r, RBinFile *binfile) {
-	r_return_val_if_fail (r, false);
+	R_RETURN_VAL_IF_FAIL (r, false);
 
 	RBinObject *binobj = binfile? binfile->bo: NULL;
 	RBinInfo *info = binobj? binobj->info: NULL;
@@ -318,7 +318,7 @@ R_API bool r_core_bin_set_env(RCore *r, RBinFile *binfile) {
 }
 
 R_API bool r_core_bin_set_cur(RCore *core, RBinFile *binfile) {
-	r_return_val_if_fail (core && binfile, false);
+	R_RETURN_VAL_IF_FAIL (core && binfile, false);
 	ut32 fd = UT32_MAX;
 	if (!core->bin) {
 		return false;
@@ -662,7 +662,7 @@ static const char* get_compile_time(Sdb *binFileSdb) {
 static bool is_executable(RBinObject *obj) {
 	RListIter *it;
 	RBinSection* sec;
-	r_return_val_if_fail (obj, false);
+	R_RETURN_VAL_IF_FAIL (obj, false);
 	if (obj->info && obj->info->arch) {
 		return true;
 	}
@@ -708,7 +708,7 @@ static void load_types_from(RCore *core, const char *fmt, ...) {
 }
 
 R_API void r_core_anal_type_init(RCore *core) {
-	r_return_if_fail (core && core->anal);
+	R_RETURN_IF_FAIL (core && core->anal);
 	int bits = core->rasm->config->bits;
 	Sdb *types = core->anal->sdb_types;
 	// make sure they are empty this is initializing
@@ -730,7 +730,7 @@ R_API void r_core_anal_type_init(RCore *core) {
 }
 
 R_API void r_core_anal_cc_init(RCore *core) {
-	r_return_if_fail (core);
+	R_RETURN_IF_FAIL (core);
 	char *anal_arch = strdup (r_config_get (core->config, "anal.arch"));
 	if (anal_arch && !strcmp (anal_arch, "r2ghidra")) {
 		free (anal_arch);
@@ -1285,7 +1285,7 @@ static bool bin_dwarf(RCore *core, PJ *pj, int mode) {
 }
 
 R_API bool r_core_pdb_info(RCore *core, const char *file, PJ *pj, int mode) {
-	r_return_val_if_fail (core && file, false);
+	R_RETURN_VAL_IF_FAIL (core && file, false);
 
 	ut64 baddr = r_config_get_i (core->config, "bin.baddr");
 	if (!baddr && core->bin->cur && core->bin->cur->bo && core->bin->cur->bo->baddr) {
@@ -1393,7 +1393,7 @@ static bool bin_source(RCore *r, PJ *pj, int mode) {
 }
 
 static ut64 a2b(RBin *bin, ut64 addr) {
-	r_return_val_if_fail (bin, UT64_MAX);
+	R_RETURN_VAL_IF_FAIL (bin, UT64_MAX);
 	RBinObject *o = r_bin_cur_object (bin);
 	if (o) {
 		return o->baddr_shift + addr;
@@ -1861,7 +1861,7 @@ static bool bin_relocs(RCore *r, PJ *pj, int mode, int va) {
 	bool keep_lib = r_config_get_i (r->config, "bin.demangle.libs");
 	const char *lang = r_config_get (r->config, "bin.lang");
 	RTable *table = r_core_table (r, "relocs");
-	r_return_val_if_fail (table, false);
+	R_RETURN_VAL_IF_FAIL (table, false);
 	Sdb *db = NULL;
 	char *sdb_module = NULL;
 	int i = 0;
@@ -2086,22 +2086,18 @@ static bool bin_relocs(RCore *r, PJ *pj, int mode, int va) {
 	return true;
 }
 
-#define MYDB 1
-/* R2_590 - this is a VERY VERY VERY hacky and bad workaround that needs proper refactoring in Rbin to use Sdb */
-#if MYDB
+/* R2_600 - avoid using globals to resolve symbols and imports without making it expensive */
 R_DEPRECATE static R_TH_LOCAL Sdb *mydb = NULL;
 R_DEPRECATE static R_TH_LOCAL RVecRBinSymbol *osymbols = NULL;
 
 R_DEPRECATE static RBinSymbol *get_import(RBin *bin, RVecRBinSymbol *symbols, const char *name, ut64 addr) {
 	r_strf_buffer(64);
 	RBinSymbol *symbol, *res = NULL;
-#if 1
 	if (mydb && symbols && symbols != osymbols) {
 		sdb_free (mydb);
 		mydb = NULL;
 		osymbols = symbols;
 	}
-#endif
 	if (mydb) {
 		if (name) {
 			res = (RBinSymbol*)(void*)(size_t)
@@ -2138,29 +2134,10 @@ R_DEPRECATE static RBinSymbol *get_import(RBin *bin, RVecRBinSymbol *symbols, co
 	}
 	return res;
 }
-#else
-static R_TH_LOCAL RList *osymbols = NULL;
-static RBinSymbol *get_symbol(RBin *bin, RList *symbols, const char *name, ut64 addr) {
-	RBinSymbol *symbol;
-	RListIter *iter;
-	// XXX this is slow, we should use a hashtable here
-	r_list_foreach (symbols, iter, symbol) {
-		if (name) {
-			if (!strcmp (symbol->name, name))
-				return symbol;
-		} else {
-			if (symbol->vaddr == addr) {
-				return symbol;
-			}
-		}
-	}
-	return NULL;
-}
-#endif
 
 /* XXX: This is a hack to get PLT references in rabin2 -i */
 R_API ut64 r_core_bin_impaddr(RBin *bin, int va, const char *name) {
-	r_return_val_if_fail (bin, UT64_MAX);
+	R_RETURN_VAL_IF_FAIL (bin, UT64_MAX);
 	ut64 addr = UT64_MAX;
 	if (!name || !*name) {
 		return addr;
@@ -2190,7 +2167,7 @@ static bool bin_imports(RCore *r, PJ *pj, int mode, int va, const char *name) {
 	bool bin_demangle = r_config_get_b (r->config, "bin.demangle");
 	bool keep_lib = r_config_get_b (r->config, "bin.demangle.libs");
 	RTable *table = r_core_table (r, "imports");
-	r_return_val_if_fail (table, false);
+	R_RETURN_VAL_IF_FAIL (table, false);
 	RBinImport *import;
 	RListIter *iter;
 	r_strf_buffer (64);
@@ -2307,13 +2284,11 @@ static bool bin_imports(RCore *r, PJ *pj, int mode, int va, const char *name) {
 	}
 
 	r_table_free (table);
-#if MYDB
 	// NOTE: if we comment out this, it will leak.. but it will be faster
 	// because it will keep the cache across multiple RBin calls
 	osymbols = NULL;
 	sdb_free (mydb);
 	mydb = NULL;
-#endif
 	return true;
 }
 
@@ -2864,7 +2839,7 @@ static RIODesc *findReusableFile(RIO *io, const char *uri, int perm) {
 }
 
 static bool io_create_mem_map(RIO *io, RBinSection *sec, ut64 at, ut64 gap) {
-	r_return_val_if_fail (io && sec, false);
+	R_RETURN_VAL_IF_FAIL (io && sec, false);
 
 	bool reused = false;
 	char *uri = r_str_newf ("null://%"PFMT64u, gap);
@@ -2969,7 +2944,7 @@ static bool bin_map_sections_to_segments(RBin *bin, PJ *pj, int mode) {
 
 	r_list_foreach (segments, iter, segment) {
 		RInterval segment_itv = (RInterval){segment->vaddr, segment->size};
-		char *tmp2 = r_str_new ("");
+		char *tmp2 = strdup ("");
 		r_list_foreach (sections, iter2, section) {
 			RInterval section_itv = (RInterval){section->vaddr, section->size};
 			if (r_itv_begin (section_itv) >= r_itv_begin (segment_itv) && r_itv_end (section_itv) <= r_itv_end (segment_itv) && section->name[0]) {
@@ -3019,6 +2994,14 @@ static bool bin_sections(RCore *r, PJ *pj, int mode, ut64 laddr, int va, ut64 at
 	bool segments_only = true;
 	RList *io_section_info = NULL;
 	ut64 bin_hashlimit = r_config_get_i (r->config, "bin.hashlimit");
+	if (r->bin->cur == NULL) {
+		if (pj) {
+			pj_a (pj);
+			pj_end (pj);
+		}
+		return false;
+	}
+	r_io_use_fd (r->io, r->bin->cur->fd);
 	ut64 filesize = (r->io->desc) ? r_io_fd_size (r->io, r->io->desc->fd): 0;
 
 	if (!dup_chk_ht) {
@@ -3107,6 +3090,7 @@ static bool bin_sections(RCore *r, PJ *pj, int mode, ut64 laddr, int va, ut64 at
 		}
 		io_section_info = r_list_newf ((RListFree)free);
 	}
+	int plimit = filesize? R_MIN (filesize, bin_hashlimit): bin_hashlimit;
 	r_list_foreach (sections, iter, section) {
 		char perms[] = "----";
 		int va_sect = va;
@@ -3236,8 +3220,7 @@ static bool bin_sections(RCore *r, PJ *pj, int mode, ut64 laddr, int va, ut64 at
 			char *hashstr = NULL;
 			if (hashtypes) {
 				int datalen = section->size;
-				int limit = filesize? R_MIN (filesize, bin_hashlimit): bin_hashlimit;
-				if (datalen > 0 && datalen < limit) {
+				if (datalen > 0 && datalen < plimit) {
 					ut8 *data = malloc (datalen);
 					if (!data) {
 						goto out;
@@ -3271,8 +3254,7 @@ static bool bin_sections(RCore *r, PJ *pj, int mode, ut64 laddr, int va, ut64 at
 			pj_ks (pj, "perm", perms);
 			if (hashtypes && (int)section->size > 0) {
 				int datalen = section->size;
-				int limit = filesize? R_MIN (filesize, bin_hashlimit): bin_hashlimit;
-				if (datalen > 0 && datalen < limit) {
+				if (datalen > 0 && datalen < plimit) {
 					ut8 *data = malloc (datalen);
 					if (!data) {
 						goto out;
@@ -3284,8 +3266,8 @@ static bool bin_sections(RCore *r, PJ *pj, int mode, ut64 laddr, int va, ut64 at
 						R_LOG_ERROR ("Cannot read section at 0x%08"PFMT64x, section->paddr);
 					}
 					free (data);
-				} else if (r->bin->verbose) {
-					R_LOG_ERROR ("Section at 0x%08"PFMT64x" larger than bin.hashlimit", section->paddr);
+				} else { // if (r->bin->verbose) {
+					R_LOG_WARN ("Section at 0x%08"PFMT64x" larger than bin.hashlimit", section->paddr);
 				}
 			}
 			pj_kn (pj, "paddr", section->paddr);
@@ -3295,9 +3277,8 @@ static bool bin_sections(RCore *r, PJ *pj, int mode, ut64 laddr, int va, ut64 at
 			char *hashstr = NULL, str[128];
 			if (hashtypes && section->size > 0) {
 				int datalen = section->size;
-				int limit = filesize? R_MIN (filesize, bin_hashlimit): bin_hashlimit;
-				if (datalen > 0 && datalen < limit) {
-					ut8 *data = malloc (datalen);
+				if (datalen > 0 && datalen < plimit) {
+					ut8 *data = calloc (datalen, 1);
 					if (!data) {
 						goto out;
 					}
@@ -3305,10 +3286,11 @@ static bool bin_sections(RCore *r, PJ *pj, int mode, ut64 laddr, int va, ut64 at
 					if (dl == datalen) {
 						hashstr = build_hash_string (pj, mode, hashtypes, data, datalen);
 					} else if (r->bin->verbose) {
-						R_LOG_ERROR ("Cannot read section at 0x%08"PFMT64x, section->paddr);
+						hashstr = strdup ("*error*");
+						R_LOG_WARN ("Cannot read section at 0x%08"PFMT64x, section->paddr);
 					}
 					free (data);
-				} else if (r->bin->verbose) {
+				} else {
 					R_LOG_WARN ("Section at 0x%08"PFMT64x" larger than bin.hashlimit", section->paddr);
 				}
 			}
@@ -3366,11 +3348,7 @@ static bool bin_sections(RCore *r, PJ *pj, int mode, ut64 laddr, int va, ut64 at
 			// This is damn slow if section vsize is HUGE
 			if (section->vsize < 1024 * 1024 * 2) {
 				R_LOG_DEBUG ("(section %s) %s @ 0x%" PFMT64x, section->name, section->format, section->vaddr);
-#if R2_590
-				r_core_cmdf_at (r, section->vaddr, "%s", section->format);
-#else
-				r_core_cmdf (r, "%s @ 0x%" PFMT64x, section->format, section->vaddr);
-#endif
+				r_core_cmd_call_at (r, section->vaddr, section->format);
 			}
 		}
 	}
@@ -3403,6 +3381,10 @@ static bool bin_fields(RCore *r, PJ *pj, int mode, int va) {
 	RBin *bin = r->bin;
 	RBinObject *o = r_bin_cur_object (bin);
 	if (!o) {
+		if (IS_MODE_JSON (mode)) {
+			pj_o (pj);
+			pj_end (pj);
+		}
 		return false;
 	}
 	RList *fields = o->fields;
@@ -3887,9 +3869,6 @@ static bool bin_classes(RCore *r, PJ *pj, int mode) {
 	if (IS_MODE_JSON (mode)) {
 		pj_a (pj);
 	} else if (IS_MODE_SET (mode)) {
-		if (!r_config_get_b (r->config, "bin.classes")) {
-			return false;
-		}
 		r_flag_space_set (r->flags, R_FLAGS_FS_CLASSES);
 	} else if (IS_MODE_RAD (mode) && !IS_MODE_CLASSDUMP (mode)) {
 		r_cons_println ("fs classes");
@@ -4793,7 +4772,7 @@ static bool bin_signature(RCore *r, PJ *pj, int mode) {
 }
 
 R_API bool r_core_bin_info(RCore *core, int action, PJ *pj, int mode, int va, RCoreBinFilter *filter, const char *chksum) {
-	r_return_val_if_fail (core, false);
+	R_RETURN_VAL_IF_FAIL (core, false);
 	const char *name = (filter && filter->name)? filter->name : NULL;
 	bool ret = true;
 	ut64 at = UT64_MAX, loadaddr = r_bin_get_laddr (core->bin);
@@ -5003,7 +4982,7 @@ R_API bool r_core_bin_delete(RCore *core, ut32 bf_id) {
 }
 
 static bool r_core_bin_file_print(RCore *core, RBinFile *bf, PJ *pj, int mode) {
-	r_return_val_if_fail (core && bf, false);
+	R_RETURN_VAL_IF_FAIL (core && bf, false);
 	if (!bf->bo) {
 		return false;
 	}
@@ -5064,7 +5043,7 @@ static bool r_core_bin_file_print(RCore *core, RBinFile *bf, PJ *pj, int mode) {
 }
 
 R_API bool r_core_bin_list(RCore *core, int mode) {
-	r_return_val_if_fail (core && core->bin, false);
+	R_RETURN_VAL_IF_FAIL (core && core->bin, false);
 	// list all binfiles and there objects and there archs
 	RListIter *iter;
 	RBinFile *binfile = NULL;
@@ -5142,7 +5121,7 @@ R_API char *r_core_bin_attr_tostring(ut64 flags, int mode) {
 }
 
 R_API bool r_core_bin_rebase(RCore *core, ut64 baddr) {
-	r_return_val_if_fail (core && core->bin, false);
+	R_RETURN_VAL_IF_FAIL (core && core->bin, false);
 	if (core->bin->cur && baddr != UT64_MAX) {
 		RBinFile *bf = core->bin->cur;
 		bf->bo->baddr = baddr;

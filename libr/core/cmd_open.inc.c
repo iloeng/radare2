@@ -66,7 +66,7 @@ static RCoreHelpMessage help_msg_op = {
 };
 
 static RCoreHelpMessage help_msg_omn = {
-	"Usage: omn[.i]", "([fd]) [name]", "Define a name for the given map",
+	"Usage: omn[.i]", "([addr]) [name]", "Define a name for the given map",
 	"omn", " mapaddr [name]", "set/delete name for map which spans mapaddr",
 	"omn.", "([-|name])", "show/set/delete name for current map",
 	"omni", " mapid [name]", "set/delete name for map with mapid",
@@ -163,6 +163,7 @@ static RCoreHelpMessage help_msg_oo = {
 	"oo", "", "reopen current file",
 	"oo+", "", "reopen in read-write",
 	"oob", " [baddr]", "reopen loading rbin info (change base address?)",
+	"ooi", "", "reopen bin info without reloading the file",
 	"ooc", "", "reopen core with current file",
 	"ood", "[?]", "reopen in debug mode",
 	"oom", "[?]", "reopen in malloc://",
@@ -474,10 +475,10 @@ static void cmd_open_bin(RCore *core, const char *input) {
 static void map_list(RCore *core, int mode, RPrint *print, int fd) {
 	RIO *io = core->io;
 	ut64 off = core->offset;
-	r_return_if_fail (io && print && print->cb_printf);
+	R_RETURN_IF_FAIL (io && print && print->cb_printf);
 	PJ *pj = NULL;
 	if (mode == 'j') {
-		pj = pj_new ();
+		pj = r_core_pj_new (core);
 		if (!pj) {
 			return;
 		}
@@ -951,7 +952,7 @@ static void cmd_open_map(RCore *core, const char *input) {
 		map = r_io_map_get_at (core->io, core->offset);
 		if (map) {
 			if (input[2] == 'j') { // "om.j"
-				pj = pj_new ();
+				pj = r_core_pj_new (core);
 				if (!pj) {
 					return;
 				}
@@ -974,6 +975,8 @@ static void cmd_open_map(RCore *core, const char *input) {
 					map->delta, r_io_map_begin (map), r_io_map_to (map),
 					r_str_rwx_i (map->perm), r_str_get (map->name));
 			}
+		} else if (input[2] == 'j') {
+			r_cons_println ("{}");
 		}
 		break;
 	case 'r': // "omr"
@@ -1032,6 +1035,9 @@ static void cmd_open_map(RCore *core, const char *input) {
 		break;
 	case 'p':
 		switch (input[2]) {
+		case '?': // "omp?"
+			r_core_cmd_help_contains (core, help_msg_om, "omp");
+			break;
 		case 'd': // "ompf"
 			id = r_num_math (core->num, input + 3);		//mapid
 			if (r_io_map_exists_for_id (core->io, id)) {
@@ -1092,7 +1098,7 @@ static void cmd_open_map(RCore *core, const char *input) {
 			}
 		} else {
 			bool use_id = (input[2] == 'i') ? true : false;
-			s = strdup (use_id ? input + 3 : input + 2);
+			s = r_str_trim_dup (input + (use_id ? 3: 2));
 			if (!s) {
 				break;
 			}
@@ -1113,7 +1119,11 @@ static void cmd_open_map(RCore *core, const char *input) {
 					addr = r_num_math (core->num, s);
 					map = r_io_map_get_at (core->io, addr);
 				}
-				r_io_map_del_name (map);
+				if (map) {
+					r_io_map_del_name (map);
+				} else {
+					R_LOG_ERROR ("Cannot find map with given id or address");
+				}
 				s = p;
 				break;
 			}
@@ -1727,6 +1737,23 @@ static bool find_desc_by_name(void *user, void *data, ut32 id) {
 	return true;
 }
 
+static int cmd_ooi(RCore *r, const char *file, ut64 baseaddr) {
+	int result = 0;
+	RIODesc *cd = r->io->desc;
+	if (baseaddr == UT64_MAX) {
+		baseaddr = 0;
+	}
+	if (cd) {
+		RBinFile *bf = r_bin_file_find_by_fd (r->bin, cd->fd);
+		if (bf) {
+			result = r_bin_reload (r->bin, bf->id, baseaddr);
+		}
+	}
+	r_core_bin_set_env (r, r_bin_cur (r->bin));
+	return result;
+}
+
+
 static bool cmd_onn(RCore *core, const char* input) {
 	const char *arg0 = input;
 	while (*arg0 && *arg0 != ' ') {
@@ -2157,7 +2184,7 @@ static int cmd_open(void *data, const char *input) {
 			r_core_cmd_help_match (core, help_msg_o, "oj");
 			break;
 		}
-		PJ *pj = pj_new ();
+		PJ *pj = r_core_pj_new (core);
 		pj_a (pj);
 		r_id_storage_foreach (core->io->files, desc_list_json_cb, pj);
 		pj_end (pj);
@@ -2341,6 +2368,23 @@ static int cmd_open(void *data, const char *input) {
 				r_core_cmd_help_match (core, help_msg_oo, "ooc");
 			} else {
 				r_core_cmd0 (core, "oc `o.`");
+			}
+			break;
+		case 'i': // "ooi" // reload info
+			if (input[2] == '?') {
+				r_core_cmd_help_match (core, help_msg_oo, "ooi");
+			} else {
+				const char *arg = strchr (input, ' ');
+				if (arg) {
+					arg++;
+				}
+				ut64 baddr = arg? r_num_math (core->num, arg) : r_config_get_i (core->config, "bin.baddr");
+				// XXX: this will reload the bin using the buffer.
+				// An assumption is made that assumes there is an underlying
+				// plugin that will be used to load the bin (e.g. malloc://)
+				// TODO: Might be nice to reload a bin at a specified offset?
+				cmd_ooi (core, NULL, baddr);
+				r_core_block_read (core);
 			}
 			break;
 		case 'b': // "oob" : reopen with bin info

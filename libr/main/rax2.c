@@ -38,6 +38,7 @@ typedef struct {
 	bool newline;		// -n
 	bool jsonbases;		// -j
 	bool forcebase;		// -b
+	bool quiet;		// -q
 } RaxActions;
 
 typedef struct {
@@ -48,7 +49,7 @@ typedef struct {
 static bool rax(RNum *num, char *str, int len, int last, RaxActions *flags, RaxMode *mode, PJ **pj);
 
 static int use_stdin(RNum *num, RaxActions *flags, RaxMode *mode, PJ **pj) {
-	r_return_val_if_fail (num && flags, -1);
+	R_RETURN_VAL_IF_FAIL (num && flags, -1);
 	int rc = 0;
 	if (flags->slurphex) {
 		char buf[1]= {0};
@@ -193,6 +194,7 @@ static int help(void) {
 		"  -K         randomart            ;  rax2 -K 0x34 1020304050\n"
 		"  -n         newline              ;  append newline to output (for -E/-D/-r/..)\n"
 		"  -o         octalstr -> raw      ;  rax2 -o \\162 \\62 # r2\n"
+		"  -q         quiet mode           ;  rax2 -qC < /etc/hosts # be quiet\n"
 		"  -r         r2 style output      ;  rax2 -r 0x1234 # same as r2 -c '? 0x1234'\n"
 		"  -s         hexstr -> raw        ;  rax2 -s 43 4a 50\n"
 		"  -S         raw -> hexstr        ;  rax2 -S < /bin/ls > ls.hex\n"
@@ -248,6 +250,7 @@ static bool rax(RNum *num, char *str, int len, int last, RaxActions *flags, RaxM
 			case 'H': flags->hashstr = !flags->hashstr; break;
 			case 'k': flags->keepbase = !flags->keepbase; break;
 			case 'f': flags->floating = !flags->floating; break;
+			case 'q': flags->quiet = !flags->quiet; break;
 			case 'd': flags->decimal = !flags->decimal; break;
 			case 'K': flags->randomart = !flags->randomart; break;
 			case 'x': flags->binarynum = !flags->binarynum; break;
@@ -662,22 +665,20 @@ dotherax:
 		return true;
 	}
 	if (flags->dumpcstr) { // -C
-		RStrBuf *sb = r_strbuf_new ("unsigned char buf[] = {");
+		RStrBuf *sb = r_strbuf_new (flags->quiet ?"  ": "unsigned char buf[] = {\n  ");
 		const int byte_per_col = 12;
 		for (i = 0; i < len - 1; i++) {
 			// wrapping every N bytes
-			if (i % byte_per_col == 0) {
+			if (i > 0 && (i % byte_per_col) == 0) {
 				r_strbuf_append (sb, "\n  ");
 			}
 			r_strbuf_appendf (sb, "0x%02x, ", (ut8) str[i]);
 		}
-		// some care for the last element
-		if (i % byte_per_col == 0) {
-			r_strbuf_append (sb, "\n  ");
-		}
 		r_strbuf_appendf (sb, "0x%02x\n", (ut8) str[len - 1]);
-		r_strbuf_append (sb, "};\n");
-		r_strbuf_appendf (sb, "unsigned int buf_len = %d;\n", len);
+		if (!flags->quiet) {
+			r_strbuf_append (sb, "};\n");
+			r_strbuf_appendf (sb, "unsigned int buf_len = %d;\n", len);
+		}
 		char *s = r_strbuf_drain (sb);
 		if (s) {
 			printf ("%s", s);
@@ -687,7 +688,7 @@ dotherax:
 	}
 	if (flags->octal2raw) { // -o
 		char *modified_str = (*str == '0')
-			? r_str_new (str)
+			? strdup (str)
 			: r_str_newf ("0%s", str);
 		const char *errstr = NULL;
 		ut64 n = r_num_calc (num, modified_str, &errstr);

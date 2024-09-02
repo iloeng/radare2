@@ -30,7 +30,7 @@ static int reloc_cmp(void *incoming, void *in, void *user) {
 }
 
 static void object_delete_items(RBinObject *o) {
-	r_return_if_fail (o);
+	R_RETURN_IF_FAIL (o);
 	ut32 i = 0;
 	r_strpool_free (o->pool);
 	ht_up_free (o->addr2klassmethod);
@@ -100,6 +100,10 @@ static char *swiftField(const char *dn, const char *cn) {
 
 static void classes_from_symbols2(RBinFile *bf, RBinSymbol *sym) {
 	const char *dname = r_bin_name_tostring2 (sym->name, 'd');
+	char *tridot = strstr (dname, "...");
+	if (tridot) {
+		*tridot = 0;
+	}
 	if (strstr (dname, "::")) {
 		char *klass = strdup (dname);
 		char *par = strchr (klass, '(');
@@ -186,7 +190,7 @@ static RList *classes_from_symbols(RBinFile *bf) {
 
 // TODO: kill offset and sz, because those should be inferred from binfile->buf
 R_IPI RBinObject *r_bin_object_new(RBinFile *bf, RBinPlugin *plugin, ut64 baseaddr, ut64 loadaddr, ut64 offset, ut64 sz) {
-	r_return_val_if_fail (bf && plugin, NULL);
+	R_RETURN_VAL_IF_FAIL (bf && plugin, NULL);
 	ut64 bytes_sz = r_buf_size (bf->buf);
 	RBinObject *bo = R_NEW0 (RBinObject);
 	if (!bo) {
@@ -258,7 +262,8 @@ R_IPI RBinObject *r_bin_object_new(RBinFile *bf, RBinPlugin *plugin, ut64 basead
 	return bo;
 }
 
-static void filter_classes(RBinFile *bf, RList *list) {
+static bool filter_classes(RBinFile *bf, RList *list) {
+	bool rc = true;
 	HtSU *db = ht_su_new0 ();
 	HtPP *ht = ht_pp_new0 ();
 	RListIter *iter, *iter2;
@@ -267,16 +272,26 @@ static void filter_classes(RBinFile *bf, RList *list) {
 	r_list_foreach (list, iter, cls) {
 		const char *kname = r_bin_name_tostring (cls->name);
 		char *fname = r_bin_filter_name (bf, db, cls->index, kname);
-		if (fname) {
-			r_bin_name_update (cls->name, fname);
+		if (R_STR_ISEMPTY (fname)) {
+			R_LOG_INFO ("Corrupted class storage with nameless classes");
+			rc = false;
 			free (fname);
+			break;
 		}
+		r_bin_name_update (cls->name, fname);
+		free (fname);
 		r_list_foreach (cls->methods, iter2, sym) {
-			r_bin_filter_sym (bf, ht, sym->vaddr, sym);
+			if (R_LIKELY (sym->name)) {
+				r_bin_filter_sym (bf, ht, sym->vaddr, sym);
+			} else {
+				R_LOG_INFO ("Unnamed method. Assuming corrupted storage");
+				break;
+			}
 		}
 	}
 	ht_su_free (db);
 	ht_pp_free (ht);
+	return rc;
 }
 
 static RRBTree *list2rbtree(RList *relocs) {
@@ -316,7 +331,7 @@ static void r_bin_object_rebuild_classes_ht(RBinObject *bo) {
 }
 
 R_API int r_bin_object_set_items(RBinFile *bf, RBinObject *bo) {
-	r_return_val_if_fail (bf && bo && bo->plugin, false);
+	R_RETURN_VAL_IF_FAIL (bf && bo && bo->plugin, false);
 
 	int i;
 	bool isSwift = false;
@@ -325,7 +340,6 @@ R_API int r_bin_object_set_items(RBinFile *bf, RBinObject *bo) {
 	int minlen = (bf->rbin->minstrlen > 0) ? bf->rbin->minstrlen : p->minstrlen;
 	bf->bo = bo;
 
-#if 0
 	bo->info = p->info? p->info (bf): NULL;
 	if (bo->info && bo->info->type) {
 		if (strstr (bo->info->type, "CORE")) {
@@ -337,7 +351,6 @@ R_API int r_bin_object_set_items(RBinFile *bf, RBinObject *bo) {
 			}
 		}
 	}
-#endif
 	// XXX: no way to get info from xtr pluginz?
 	// Note, object size can not be set from here due to potential
 	// inconsistencies
@@ -450,6 +463,9 @@ R_API int r_bin_object_set_items(RBinFile *bf, RBinObject *bo) {
 			filter_classes (bf, bo->classes);
 		}
 		// cache addr=class+method
+#if 0
+		// moved into libr/core/canal.c
+		// XXX SLOW on large binaries. only used when needed by getFunctionName from canal.c
 		if (bo->classes) {
 			RList *klasses = bo->classes;
 			RListIter *iter, *iter2;
@@ -465,6 +481,7 @@ R_API int r_bin_object_set_items(RBinFile *bf, RBinObject *bo) {
 				}
 			}
 		}
+#endif
 	}
 	if (p->lines) {
 		bo->lines = p->lines (bf);
@@ -502,7 +519,7 @@ R_API int r_bin_object_set_items(RBinFile *bf, RBinObject *bo) {
 }
 
 R_IPI RRBTree *r_bin_object_patch_relocs(RBinFile *bf, RBinObject *bo) {
-	r_return_val_if_fail (bf && bo, NULL);
+	R_RETURN_VAL_IF_FAIL (bf && bo, NULL);
 
 	if (!bo->is_reloc_patched && bo->plugin && bo->plugin->patch_relocs) {
 		RList *tmp = bo->plugin->patch_relocs (bf);
@@ -519,12 +536,12 @@ R_IPI RRBTree *r_bin_object_patch_relocs(RBinFile *bf, RBinObject *bo) {
 }
 
 R_IPI RBinObject *r_bin_object_get_cur(RBin *bin) {
-	r_return_val_if_fail (bin && bin->cur, NULL);
+	R_RETURN_VAL_IF_FAIL (bin && bin->cur, NULL);
 	return bin->cur->bo;
 }
 
 R_IPI RBinObject *r_bin_object_find_by_arch_bits(RBinFile *bf, const char *arch, int bits, const char *name) {
-	r_return_val_if_fail (bf && arch && name, NULL);
+	R_RETURN_VAL_IF_FAIL (bf && arch && name, NULL);
 	if (bf->bo) {
 		RBinInfo *info = bf->bo->info;
 		if (info && info->arch && info->file &&
@@ -538,7 +555,7 @@ R_IPI RBinObject *r_bin_object_find_by_arch_bits(RBinFile *bf, const char *arch,
 }
 
 R_API bool r_bin_object_delete(RBin *bin, ut32 bf_id) {
-	r_return_val_if_fail (bin, false);
+	R_RETURN_VAL_IF_FAIL (bin, false);
 
 	bool res = false;
 	RBinFile *bf = r_bin_file_find_by_id (bin, bf_id);
@@ -555,7 +572,7 @@ R_API bool r_bin_object_delete(RBin *bin, ut32 bf_id) {
 }
 
 R_IPI void r_bin_object_filter_strings(RBinObject *bo) {
-	r_return_if_fail (bo && bo->strings);
+	R_RETURN_IF_FAIL (bo && bo->strings);
 
 	RList *strings = bo->strings;
 	RBinString *ptr;

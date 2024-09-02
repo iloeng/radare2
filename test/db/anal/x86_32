@@ -476,7 +476,7 @@ s 0x00402ade
 pd 4~printf
 EOF
 EXPECT=<<EOF
-  0x00402ae8      call dword [sym.imp.msvcrt.dll_printf] ; 0x402d48 ; esp=0x177ff8 ; eip=0x2d08 reloc.msvcrt.dll_printf
+  0x00402ae8      call dword [sym.imp.msvcrt.dll_printf] ; 0x402d48 ; esp=0x177ff8 ; [0x00177ff8:4] = 0x402aee ; eip=0x2d08 reloc.msvcrt.dll_printf
                     ; int printf("  - RT_MANIFEST resource located\n")
 EOF
 RUN
@@ -3063,8 +3063,7 @@ afF
 agf
 EOF
 EXPECT=<<EOF
-[0x00000000]>  # test ();
- --------------------------.
+.--------------------------.
 |  0x0                     |
 | / (fcn) test             |
 | (6 byte folded function) |
@@ -3187,7 +3186,7 @@ EXPECT=<<EOF
   {
     "opcode": "pushf",
     "disasm": "pushf",
-    "pseudo": "push ()",
+    "pseudo": "push (cpuflags)",
     "description": "push flags register onto the stack",
     "mnemonic": "pushf",
     "mask": "ffff",
@@ -3433,12 +3432,11 @@ ao 1
 p8 1
 EOF
 EXPECT=<<EOF
-16
+15
 address: 0x0
 opcode: nop
 esilcost: 0
 disasm: nop
-pseudo: no
 mnemonic: nop
 description: no operation
 mask: ff
@@ -3577,6 +3575,7 @@ EXPECT=<<EOF
 |           0x08048056      xor eax, eax
 |           0x08048058      inc eax
 |           ;-- syscall.exit:
+|           ;-- syscall.exit.0:
 \           0x08048059      int 0x80
 EOF
 RUN
@@ -3618,8 +3617,7 @@ agf
 afl
 EOF
 EXPECT=<<EOF
-[0x0804805b]>  # fcn.0804805b ();
- ----.
+.----.
 |    |
 |.----------------------------------------------.
 ||  0x8048054                                   |

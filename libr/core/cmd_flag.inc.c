@@ -42,12 +42,14 @@ static RCoreHelpMessage help_msg_f = {
 	"fc", "[?][name] [color]", "set color for given flag",
 	"fC", " [name] [cmt]", "set comment for given flag",
 	"fd", "[?] addr", "return flag+delta",
+	"fD", "[?] rawname", "(de)mangle flag or set a new flag",
 	"fe", " [name]", "create flag name.#num# enumerated flag. (f.ex: fe foo @@= 1 2 3 4)",
 	"fe-", "", "resets the enumerator counter",
 	"ff", " ([glob])", "distance in bytes to reach the next flag (see sn/sp)",
 	"fi", " [size] | [from] [to]", "show flags in current block or range",
 	"fg", "[*] ([prefix])", "construct a graph with the flag names",
 	"fj", "", "list flags in JSON format",
+	"fq", "", "list flags in quiet mode",
 	"fl", " (@[flag]) [size]", "show or set flag length (size)",
 	"fla", " [glob]", "automatically compute the size of all flags matching glob",
 	"fm", " addr", "move flag at current offset to new address",
@@ -64,7 +66,6 @@ static RCoreHelpMessage help_msg_f = {
 	"ft", "[?]*", "flag tags, useful to find all flags matching some words",
 	"fV", "[*-] [nkey] [offset]", "dump/restore visual marks (mK/'K)",
 	"fx", "[d]", "show hexdump (or disasm) of flag:flagsize",
-	"fq", "", "list flags in quiet mode",
 	"fz", "[?][name]", "add named flag zone -name to delete. see fz?[name]",
 	NULL
 };
@@ -101,12 +102,22 @@ static RCoreHelpMessage help_msg_ft = {
 	NULL
 };
 
+static RCoreHelpMessage help_msg_fD = {
+	"Usage: fD[*.j]", " [rawname]", " # filter/mangle raw symbol name to be valid flag name",
+	"fD", " rawname" , "print the mangled flag name using the raw name, see the ' command prefix",
+ 	"fD.", " rawname", "set a flag using the orig raw name in the current offset",
+	"fDj", " rawname", "same as fD but output is in json",
+	"fD*", " rawname", "filter raw name to be a valid flag and output in r2 commands",
+	NULL
+};
+
 static RCoreHelpMessage help_msg_fd = {
 	"Usage: fd[d]", " [offset|flag|expression]", " # Describe flags",
-	"fd", " $$" , "# describe flag + delta for given offset",
- 	"fd.", " $$", "# check flags in current address (no delta)",
-	"fdd", " $$", "# describe flag without space restrictions",
-	"fdw", " [string]", "# filter closest flag by string for current offset",
+	"fd", " $$" , "describe flag + delta for given offset",
+ 	"fd.", " $$", "check flags in current address (no delta)",
+	"fdj", " $$", "describe current flag in json",
+	"fdd", " $$", "describe flag without space restrictions",
+	"fdw", " [string]", "filter closest flag by string for current offset",
 	NULL
 };
 
@@ -316,13 +327,13 @@ static void __flag_graph(RCore *core, const char *input, int mode) {
 	r_list_free (flags);
 }
 
-static void spaces_list(RSpaces *sp, int mode) {
+static void spaces_list(RCore *core, RSpaces *sp, int mode) {
 	RSpaceIter *it;
 	RSpace *s;
 	const RSpace *cur = r_spaces_current (sp);
 	PJ *pj = NULL;
 	if (mode == 'j') {
-		pj = pj_new ();
+		pj = r_core_pj_new (core);
 		pj_a (pj);
 	}
 	r_spaces_foreach (sp, it, s) {
@@ -457,7 +468,7 @@ static bool flag_to_flag_foreach(RFlagItem *fi, void *user) {
 }
 
 static int flag_to_flag(RCore *core, const char *glob) {
-	r_return_val_if_fail (glob, 0);
+	R_RETURN_VAL_IF_FAIL (glob, 0);
 	glob = r_str_trim_head_ro (glob);
 	struct flag_to_flag_t u = { .next = UT64_MAX, .offset = core->offset };
 	r_flag_foreach_glob (core->flags, glob, flag_to_flag_foreach, &u);
@@ -559,7 +570,7 @@ static void cmd_flag_tags(RCore *core, const char *input) {
 	if (mode == 'j') { // "ftj"
 		RListIter *iter, *iter2;
 		const char *tag, *flg;
-		PJ *pj = pj_new ();
+		PJ *pj = r_core_pj_new (core);
 		pj_o (pj);
 		RList *list = r_flag_tags_list (core->flags, NULL);
 		r_list_foreach (list, iter, tag) {
@@ -704,13 +715,13 @@ static void print_space_stack(RFlag *f, int ordinal, const char *name, bool sele
 	}
 }
 
-static int flag_space_stack_list(RFlag *f, int mode) {
+static int flag_space_stack_list(RCore *core, RFlag *f, int mode) {
 	RListIter *iter;
 	char *space;
 	int i = 0;
 	PJ *pj = NULL;
 	if (mode == 'j') {
-		pj = pj_new ();
+		pj = r_core_pj_new (core);
 		pj_a (pj);
 	}
 	r_list_foreach (f->spaces.spacestack, iter, space) {
@@ -752,8 +763,57 @@ static bool print_function_labels_cb(void *user, const ut64 addr, const void *v)
 	return true;
 }
 
+static void cmd_fd_dot(RCore *core, const char *input) {
+	RFlagItem *flag;
+	RListIter *iter;
+	bool isJson = false;
+	const RList *flaglist;
+	const char *arg = strchr (input, ' ');
+	ut64 addr = core->offset;
+	if (arg) {
+		addr = r_num_math (core->num, arg + 1);
+	}
+	flaglist = r_flag_get_list (core->flags, addr);
+	isJson = strchr (input, 'j');
+	PJ *pj = r_core_pj_new (core);
+	if (isJson) {
+		pj_a (pj);
+	}
+
+	// Sometime an address has multiple flags assigned to, show them all
+	r_list_foreach (flaglist, iter, flag) {
+		if (flag) {
+			if (isJson) {
+				pj_o (pj);
+				pj_ks (pj, "name", flag->name);
+				if (flag->realname) {
+					pj_ks (pj, "realname", flag->realname);
+				}
+				pj_end (pj);
+
+			} else {
+				// Print realname if exists and asm.flags.real is enabled
+				if (core->flags->realnames && flag->realname) {
+					r_cons_println (flag->realname);
+				} else {
+					r_cons_println (flag->name);
+				}
+			}
+		}
+	}
+
+	if (isJson) {
+		pj_end (pj);
+		r_cons_println (pj_string (pj));
+	}
+
+	if (pj) {
+		pj_free (pj);
+	}
+}
+
 static void print_function_labels_for(RAnalFunction *fcn, int rad, PJ *pj) {
-	r_return_if_fail (fcn && (rad != 'j' || pj));
+	R_RETURN_IF_FAIL (fcn && (rad != 'j' || pj));
 	bool json = rad == 'j';
 	if (json) {
 		pj_o (pj);
@@ -765,12 +825,13 @@ static void print_function_labels_for(RAnalFunction *fcn, int rad, PJ *pj) {
 	}
 }
 
-static void print_function_labels(RAnal *anal, RAnalFunction *fcn, int rad) {
-	r_return_if_fail (anal || fcn);
+static void print_function_labels(RCore *core, RAnalFunction *fcn, int rad) {
+	R_RETURN_IF_FAIL (core || fcn);
+	RAnal *anal = core->anal;
 	PJ *pj = NULL;
 	bool json = rad == 'j';
 	if (json) {
-		pj = pj_new ();
+		pj = r_core_pj_new (core);
 	}
 	if (fcn) {
 		print_function_labels_for (fcn, rad, pj);
@@ -796,6 +857,126 @@ static void print_function_labels(RAnal *anal, RAnalFunction *fcn, int rad) {
 	if (json) {
 		r_cons_println (pj_string (pj));
 		pj_free (pj);
+	}
+}
+
+static void cmd_fd(RCore *core, const char *input) {
+	ut64 addr = core->offset;
+	char *arg = NULL;
+	RFlagItem *f = NULL;
+	bool strict_offset = false;
+	switch (input[1]) {
+	case '?':
+		r_core_cmd_help (core, help_msg_fd);
+		return;
+	case '\0':
+		addr = core->offset;
+		break;
+	case 'd':
+		arg = strchr (input, ' ');
+		if (arg) {
+			addr = r_num_math (core->num, arg + 1);
+		}
+		break;
+	case '.': // "fd." list all flags at given offset
+		cmd_fd_dot (core, input);
+		return;
+	case 'w': {
+			  arg = strchr (input, ' ');
+			  if (!arg) {
+				  return;
+			  }
+			  arg++;
+			  if (!*arg) {
+				  return;
+			  }
+
+			  RList *temp = r_flag_all_list (core->flags, true);
+			  ut64 loff = 0;
+			  ut64 uoff = 0;
+			  ut64 curseek = core->offset;
+			  char *lmatch = NULL , *umatch = NULL;
+			  RFlagItem *flag;
+			  RListIter *iter;
+			  r_list_sort (temp, &cmpflag);
+			  r_list_foreach (temp, iter, flag) {
+				  if (strstr (flag->name , arg)) {
+					  if (flag->offset < core->offset) {
+						  loff = flag->offset;
+						  lmatch = flag->name;
+						  continue;
+					  }
+					  uoff = flag->offset;
+					  umatch = flag->name;
+					  break;
+				  }
+			  }
+			  char *match = (curseek - loff) < (uoff - curseek) ? lmatch : umatch ;
+			  if (match) {
+				  if (*match) {
+					  r_cons_println (match);
+				  }
+			  }
+			  r_list_free (temp);
+			  return;
+		  }
+		  break;
+	default:
+		  arg = strchr (input, ' ');
+		  if (arg) {
+			  addr = r_num_math (core->num, arg + 1);
+		  }
+		  break;
+	}
+	f = r_flag_get_at (core->flags, addr, !strict_offset);
+	if (f) {
+		if (f->offset != addr) {
+			// if input contains 'j' print json
+			if (strchr (input, 'j')) {
+				PJ *pj = r_core_pj_new (core);
+				pj_o (pj);
+				pj_kn (pj, "offset", f->offset);
+				pj_ks (pj, "name", f->name);
+				// Print flag's real name if defined
+				if (f->realname) {
+					pj_ks (pj, "realname", f->realname);
+				}
+				pj_end (pj);
+				r_cons_println (pj_string (pj));
+				pj_free (pj);
+			} else {
+				// Print realname if exists and asm.flags.real is enabled
+				if (core->flags->realnames && f->realname) {
+					r_cons_printf ("%s + %d\n", f->realname,
+							(int)(addr - f->offset));
+				} else {
+					r_cons_printf ("%s + %d\n", f->name,
+							(int)(addr - f->offset));
+				}
+			}
+		} else {
+			if (strchr (input, 'j')) {
+				PJ *pj = r_core_pj_new (core);
+				pj_o (pj);
+				pj_ks (pj, "name", f->name);
+				// Print flag's real name if defined
+				if (f->realname) {
+					pj_ks (pj, "realname", f->realname);
+				}
+				pj_end (pj);
+				r_cons_println (pj_string (pj));
+				pj_free (pj);
+			} else {
+				// Print realname if exists and asm.flags.real is enabled
+				if (core->flags->realnames && f->realname) {
+					r_cons_println (f->realname);
+				} else {
+					r_cons_println (f->name);
+				}
+			}
+		}
+	} else if (input[1] == 'j') {
+		r_cons_println ("{}");
 	}
 }
 
@@ -860,7 +1041,7 @@ rep:
 		if (input[1] == ' ') {
 			RFlagItem *fi;
 			R_FREE (str);
-			str = strdup (input+2);
+			str = strdup (input + 2);
 			ptr = strchr (str, '=');
 			if (!ptr) {
 				ptr = strchr (str, ' ');
@@ -983,8 +1164,7 @@ rep:
 			break;
 		case '\0':
 			r_cons_printf ("%"PFMT64d" 0x%"PFMT64x"\n",
-				core->flags->base,
-				core->flags->base);
+				core->flags->base, core->flags->base);
 			break;
 		default:
 			r_core_cmd_help_match (core, help_msg_f, "fb");
@@ -1108,11 +1288,11 @@ rep:
 				r_core_cmd_help_contains (core, help_msg_f, "f.");
 			} else if (input[1] == '*' || input[1] == 'j') {
 				if (input[2] == '*') {
-					print_function_labels (core->anal, NULL, input[1]);
+					print_function_labels (core, NULL, input[1]);
 				} else {
 					RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, off, 0);
 					if (fcn) {
-						print_function_labels (core->anal, fcn, input[1]);
+						print_function_labels (core, fcn, input[1]);
 					} else {
 						R_LOG_ERROR ("Cannot find function at 0x%08"PFMT64x, off);
 					}
@@ -1142,7 +1322,7 @@ rep:
 		} else {
 			RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, off, 0);
 			if (fcn) {
-				print_function_labels (core->anal, fcn, 0);
+				print_function_labels (core, fcn, 0);
 			} else {
 				R_LOG_ERROR ("Local flags require a function to work");
 			}
@@ -1250,7 +1430,7 @@ rep:
 			}
 			break;
 		case 's': // "fss"
-			flag_space_stack_list (core->flags, input[2]);
+			flag_space_stack_list (core, core->flags, input[2]);
 			break;
 		case '-': // "fs-"
 			switch (input[2]) {
@@ -1273,35 +1453,35 @@ rep:
 			}
 			break;
 		case ' ':
-		{
-			char *name = r_str_trim_dup (input + 2);
-			r_str_trim (name);
-			r_flag_space_set (core->flags, name);
-			free (name);
-			break;
-		}
+			{
+				char *name = r_str_trim_dup (input + 2);
+				r_str_trim (name);
+				r_flag_space_set (core->flags, name);
+				free (name);
+				break;
+			}
 		case 'm': // "fsm"
-			{ RFlagItem *f;
-			ut64 off = core->offset;
-			if (input[2] == ' ') {
-				off = r_num_math (core->num, input+2);
+			{
+				ut64 off = core->offset;
+				if (input[2] == ' ') {
+					off = r_num_math (core->num, input+2);
+				}
+				RFlagItem *f = r_flag_get_i (core->flags, off);
+				if (f) {
+					f->space = r_flag_space_cur (core->flags);
+				} else {
+					R_LOG_ERROR ("Cannot find any flag at 0x%"PFMT64x, off);
+				}
+				break;
 			}
-			f = r_flag_get_i (core->flags, off);
-			if (f) {
-				f->space = r_flag_space_cur (core->flags);
-			} else {
-				R_LOG_ERROR ("Cannot find any flag at 0x%"PFMT64x, off);
-			}
-			}
-			break;
 		case 'j':
 		case '\0':
 		case '*':
 		case 'q':
-			spaces_list (&core->flags->spaces, input[1]);
+			spaces_list (core, &core->flags->spaces, input[1]);
 			break;
 		default:
-			spaces_list (&core->flags->spaces, 0);
+			spaces_list (core, &core->flags->spaces, 0);
 			break;
 		}
 		break;
@@ -1521,7 +1701,7 @@ rep:
 			const RList *list = r_flag_get_list (core->flags, core->offset);
 			PJ *pj = NULL;
 			if (mode == 'j') {
-				pj = pj_new ();
+				pj = r_core_pj_new (core);
 				pj_a (pj);
 			}
 			RListIter *iter;
@@ -1587,177 +1767,61 @@ rep:
 			free (arg);
 		}
 		break;
-	case 'd': // "fd"
-		{
-			ut64 addr = core->offset;
-			char *arg = NULL;
-			RFlagItem *f = NULL;
-			bool strict_offset = false;
-			switch (input[1]) {
-			case '?':
-				r_core_cmd_help (core, help_msg_fd);
-				free (str);
-				return false;
-			case '\0':
-				addr = core->offset;
-				break;
-			case 'd':
-				arg = strchr (input, ' ');
-				if (arg) {
-					addr = r_num_math (core->num, arg + 1);
-				}
-				break;
-			case '.': // "fd." list all flags at given offset
-				{
-				RFlagItem *flag;
-				RListIter *iter;
-				bool isJson = false;
-				const RList *flaglist;
-				arg = strchr (input, ' ');
-				if (arg) {
-					addr = r_num_math (core->num, arg + 1);
-				}
-				flaglist = r_flag_get_list (core->flags, addr);
-				isJson = strchr (input, 'j');
-				PJ *pj = pj_new ();
-				if (isJson) {
-					pj_a (pj);
-				}
-
-				// Sometime an address has multiple flags assigned to, show them all
-				r_list_foreach (flaglist, iter, flag) {
-					if (flag) {
-						if (isJson) {
-							pj_o (pj);
-							pj_ks (pj, "name", flag->name);
-							if (flag->realname) {
-								pj_ks (pj, "realname", flag->realname);
-							}
-							pj_end (pj);
-
-						} else {
-							// Print realname if exists and asm.flags.real is enabled
-							if (core->flags->realnames && flag->realname) {
-								r_cons_println (flag->realname);
-							} else {
-								r_cons_println (flag->name);
-							}
-						}
-					}
-				}
-
-				if (isJson) {
-					pj_end (pj);
-					r_cons_println (pj_string (pj));
-				}
-
-				if (pj) {
-					pj_free (pj);
-				}
-				free (str);
-				return 0;
-				}
-			case 'w': {
-				arg = strchr (input, ' ');
-				if (!arg) {
-					free (str);
-					return 0;
-				}
-				arg++;
-				if (!*arg) {
-					free (str);
-					return 0;
-				}
-
-				RFlag *f = core->flags;
-				RList *temp = r_flag_all_list (f, true);
-				ut64 loff = 0;
-				ut64 uoff = 0;
-				ut64 curseek = core->offset;
-				char *lmatch = NULL , *umatch = NULL;
-				RFlagItem *flag;
-				RListIter *iter;
-				r_list_sort (temp, &cmpflag);
-				r_list_foreach (temp, iter, flag) {
-					if (strstr (flag->name , arg)) {
-						if (flag->offset < core->offset) {
-							loff = flag->offset;
-							lmatch = flag->name;
-							continue;
-						}
-						uoff = flag->offset;
-						umatch = flag->name;
-						break;
-					}
-				}
-				char *match = (curseek - loff) < (uoff - curseek) ? lmatch : umatch ;
-				if (match) {
-					if (*match) {
-						r_cons_println (match);
-					}
-				}
-				r_list_free (temp);
-				free (str);
-				return 0;
+	case 'D': // "fD"
+		switch (input[1]) {
+		case ' ':
+			{
+				char *orig = r_str_trim_dup (input + 2);
+				char *nfn = r_name_filter_dup (orig);
+				r_cons_printf ("%s\n", nfn);
+				free (nfn);
+				free (orig);
 			}
-			default:
-				arg = strchr (input, ' ');
-				if (arg) {
-					addr = r_num_math (core->num, arg + 1);
-				}
-				break;
+			break;
+		case '*':
+			if (input[2] == ' ') {
+				char *orig = r_str_trim_dup (input + 3);
+				char *nfn = r_name_filter_dup (orig);
+				r_cons_printf ("f %s\n", nfn);
+				free (nfn);
+				free (orig);
+			} else {
+				r_core_cmd_help (core, help_msg_fD);
 			}
-			f = r_flag_get_at (core->flags, addr, !strict_offset);
-			if (f) {
-				if (f->offset != addr) {
-					// if input contains 'j' print json
-					if (strchr (input, 'j')) {
-						PJ *pj = pj_new ();
-						pj_o (pj);
-						pj_kn (pj, "offset", f->offset);
-						pj_ks (pj, "name", f->name);
-						// Print flag's real name if defined
-						if (f->realname) {
-							pj_ks (pj, "realname", f->realname);
-						}
-						pj_end (pj);
-						r_cons_println (pj_string (pj));
-						if (pj) {
-							pj_free (pj);
-						}
-					} else {
-						// Print realname if exists and asm.flags.real is enabled
-						if (core->flags->realnames && f->realname) {
-							r_cons_printf ("%s + %d\n", f->realname,
-									   (int)(addr - f->offset));
-						} else {
-							r_cons_printf ("%s + %d\n", f->name,
-									   (int)(addr - f->offset));
-						}
-					}
-				} else {
-					if (strchr (input, 'j')) {
-						PJ *pj = pj_new ();
-						pj_o (pj);
-						pj_ks (pj, "name", f->name);
-						// Print flag's real name if defined
-						if (f->realname) {
-							pj_ks (pj, "realname", f->realname);
-						}
-						pj_end (pj);
-						r_cons_println (pj_string (pj));
-						pj_free (pj);
-					} else {
-						// Print realname if exists and asm.flags.real is enabled
-						if (core->flags->realnames && f->realname) {
-							r_cons_println (f->realname);
-						} else {
-							r_cons_println (f->name);
-						}
-					}
-				}
+			break;
+		case '.':
+			if (input[2] == ' ') {
+				char *orig = r_str_trim_dup (input + 3);
+				char *nfn = r_name_filter_dup (orig);
+				r_flag_set (core->flags, nfn, core->offset, 1);
+				free (nfn);
+				free (orig);
+			} else {
+				r_core_cmd_help (core, help_msg_fD);
 			}
+			break;
+		case 'j':
+			if (input[2] == ' ') {
+				char *orig = r_str_trim_dup (input + 2);
+				char *nfn = r_name_filter_dup (orig);
+				PJ *pj = r_core_pj_new (core);
+				pj_o (pj);
+				pj_ks (pj, "orig", orig);
+				pj_ks (pj, "filtered", nfn);
+				pj_end (pj);
+				free (nfn);
+				free (orig);
+			} else {
+				r_core_cmd_help (core, help_msg_fD);
+			}
+			break;
+		default:
+			r_core_cmd_help (core, help_msg_fD);
+			break;
 		}
+		break;
+	case 'd': // "fd"
+		cmd_fd (core, input);
 		break;
 	case '?':
 	default:
@@ -1767,8 +1831,8 @@ rep:
 			r_core_return_value (core, fi? 1:0);
 		} else {
 			r_core_cmd_help (core, help_msg_f);
-			break;
 		}
+		break;
 	}
 	free (str);
 	return 0;

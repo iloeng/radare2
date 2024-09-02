@@ -1,4 +1,4 @@
-/* radare2 - LGPL - Copyright 2013-2023 - pancake */
+/* radare2 - LGPL - Copyright 2013-2024 - pancake */
 
 #include <r_arch.h>
 #include <r_anal.h>
@@ -50,7 +50,7 @@ typedef struct plugin_data_t {
 } PluginData;
 
 static bool init(RArchSession *as) {
-	r_return_val_if_fail (as, false);
+	R_RETURN_VAL_IF_FAIL (as, false);
 	if (as->data) {
 		R_LOG_WARN ("Already initialized");
 		return false;
@@ -72,7 +72,7 @@ static bool init(RArchSession *as) {
 }
 
 static bool fini(RArchSession *as) {
-	r_return_val_if_fail (as, false);
+	R_RETURN_VAL_IF_FAIL (as, false);
 	PluginData *pd = as->data;
 	cs_close (&pd->cpd.cs_handle);
 	R_FREE (as->data);
@@ -80,7 +80,7 @@ static bool fini(RArchSession *as) {
 }
 
 static csh cs_handle_for_session(RArchSession *as) {
-	r_return_val_if_fail (as && as->data, 0);
+	R_RETURN_VAL_IF_FAIL (as && as->data, 0);
 	CapstonePluginData *pd = as->data;
 	return pd->cs_handle;
 }
@@ -1324,7 +1324,7 @@ static void anop_esil(RArchSession *as, RAnalOp *op, ut64 addr, const ut8 *buf, 
 							break;
 						}
 					} else {
-						R_LOG_ERROR ("Missing read callback");
+						R_LOG_DEBUG ("Missing read callback required for a POP");
 					}
 				}
 				// dont break;
@@ -1487,12 +1487,8 @@ static void anop_esil(RArchSession *as, RAnalOp *op, ut64 addr, const ut8 *buf, 
 			if (bits != 16) {
 				ut8 thunk[4] = {0};
 #if ARCH_HAVE_READ
-#if 0
-				if (a->read_at (as, (ut64)INSOP (0).imm, thunk, sizeof (thunk))) {
-#else
 				RBin *bin = as->arch->binb.bin;
 				if (bin && bin->iob.read_at (bin->iob.io, (ut64)INSOP (0).imm, thunk, sizeof (thunk))) {
-#endif
 					/* Handle CALL ebx_pc (callpop)
 					   8b xx x4    mov <reg>, dword [esp]
 					   c3          ret
@@ -1504,20 +1500,23 @@ static void anop_esil(RArchSession *as, RAnalOp *op, ut64 addr, const ut8 *buf, 
 						esilprintf (op, "0x%"PFMT64x",%s,=", addr + op->size, reg32_to_name (reg));
 						break;
 					}
+				} else {
+					R_LOG_DEBUG ("Missing read callback for CALLPOP");
 				}
 			}
 			if (bits == 32) {
 				ut8 b[4] = {0};
-				ut64 at = addr + op->size;
+				const ut64 at = addr + op->size;
 				ut64 n = r_num_get (NULL, arg0);
 				if (n == at) {
 					RBin *bin = as->arch->binb.bin;
 					if (bin && bin->iob.read_at && bin->iob.read_at (bin->iob.io, at, b, sizeof (b))) {
-					// if (a->read_at (as, at, b, sizeof (b))) {
 						if (b[0] == 0x5b) { // pop ebx
 							esilprintf (op, "0x%"PFMT64x",ebx,=", at);
 							break;
 						}
+					} else {
+						R_LOG_DEBUG ("Missing read callback for CALLPOP");
 					}
 				}
 			}
@@ -4012,7 +4011,7 @@ In a true 32 bit Windows GS is always zero.
 #endif
 
 static char *get_reg_profile(RArchSession *as) {
-	r_return_val_if_fail (as && as->config, NULL);
+	R_RETURN_VAL_IF_FAIL (as && as->config, NULL);
 	const char *p = NULL;
 	switch (as->config->bits) {
 	case 16: p =
@@ -4403,7 +4402,7 @@ static int archinfo(RArchSession *as, ut32 q) {
 }
 
 static RList *anal_preludes(RArchSession *as) {
-	r_return_val_if_fail (as && as->config, NULL);
+	R_RETURN_VAL_IF_FAIL (as && as->config, NULL);
 	RList *l = NULL;
 	switch (as->config->bits) {
 	case 32:
@@ -4428,7 +4427,7 @@ static RList *anal_preludes(RArchSession *as) {
 }
 
 static char *mnemonics(RArchSession *as, int id, bool json) {
-	r_return_val_if_fail (as && as->data, NULL);
+	R_RETURN_VAL_IF_FAIL (as && as->data, NULL);
 	CapstonePluginData *cpd = as->data;
 	return r_arch_cs_mnemonics (as, cpd->cs_handle, id, json);
 }

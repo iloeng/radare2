@@ -353,19 +353,21 @@ R_API void r_core_arch_bits_at(RCore *core, ut64 addr, R_OUT R_NULLABLE int *bit
 	int bitsval = 0;
 	const char *archval = NULL;
 	RBinObject *o = r_bin_cur_object (core->bin);
-	RBinSection *s = o ? r_bin_get_section_at (o, addr, core->io->va) : NULL;
-	if (s) {
-		if (!core->fixedarch) {
-			archval = s->arch;
-		}
-		if (!core->fixedbits && s->bits) {
-			// only enforce if there's one bits set
-			switch (s->bits) {
-			case R_SYS_BITS_16:
-			case R_SYS_BITS_32:
-			case R_SYS_BITS_64:
-				bitsval = s->bits * 8;
-				break;
+	if (!core->fixedarch || !core->fixedbits) {
+		RBinSection *s = o ? r_bin_get_section_at (o, addr, core->io->va) : NULL;
+		if (s) {
+			if (!core->fixedarch) {
+				archval = s->arch;
+			}
+			if (!core->fixedbits && s->bits) {
+				// only enforce if there's one bits set
+				switch (s->bits) {
+				case R_SYS_BITS_16:
+				case R_SYS_BITS_32:
+				case R_SYS_BITS_64:
+					bitsval = s->bits * 8;
+					break;
+				}
 			}
 		}
 	}
@@ -441,7 +443,7 @@ R_API int r_core_seek_delta(RCore *core, st64 addr) {
 
 // TODO: R2_600 deprecate this wrapper
 R_API bool r_core_write_at(RCore *core, ut64 addr, const ut8 *buf, int size) {
-	r_return_val_if_fail (core && buf && addr != UT64_MAX, false);
+	R_RETURN_VAL_IF_FAIL (core && buf && addr != UT64_MAX, false);
 	if (size < 1) {
 		return false;
 	}
@@ -469,7 +471,7 @@ R_API bool r_core_write_at(RCore *core, ut64 addr, const ut8 *buf, int size) {
 }
 
 R_API bool r_core_extend_at(RCore *core, ut64 addr, int size) {
-	r_return_val_if_fail (core && core->io, false);
+	R_RETURN_VAL_IF_FAIL (core && core->io, false);
 	if (!core->io->desc || size < 1 || addr == UT64_MAX) {
 		return false;
 	}

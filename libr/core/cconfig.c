@@ -239,6 +239,15 @@ static bool cb_debug_hitinfo(void *user, void *data) {
 	return true;
 }
 
+static bool cb_anal_flagends(void *user, void *data) {
+#if R2_USE_NEW_ABI
+	RCore *core = (RCore*) user;
+	RConfigNode *node = (RConfigNode*) data;
+	core->anal->opt.flagends = node->i_value;
+#endif
+	return true;
+}
+
 static bool cb_anal_jmpretpoline(void *user, void *data) {
 	RCore *core = (RCore*) user;
 	RConfigNode *node = (RConfigNode*) data;
@@ -257,13 +266,6 @@ static bool cb_anal_jmptailcall_delta(void *user, void *data) {
 	RCore *core = (RCore*) user;
 	RConfigNode *node = (RConfigNode*) data;
 	core->anal->opt.tailcall_delta = node->i_value;
-	return true;
-}
-
-static bool cb_analarmthumb(void *user, void *data) {
-	RCore *core = (RCore*) user;
-	RConfigNode *node = (RConfigNode*) data;
-	core->anal->opt.armthumb = node->i_value;
 	return true;
 }
 
@@ -406,7 +408,7 @@ static bool cb_analarch(void *user, void *data) {
 }
 
 static void update_archdecoder_options(RCore *core, RConfigNode *node) {
-	r_return_if_fail (core && core->anal && core->anal->arch && node);
+	R_RETURN_IF_FAIL (core && core->anal && core->anal->arch && node);
 	r_config_node_purge_options (node);
 	RListIter *it;
 	RArchPlugin *ap;
@@ -420,7 +422,7 @@ static void update_archdecoder_options(RCore *core, RConfigNode *node) {
 static bool cb_archdecoder(void *user, void *data) {
 	RCore *core = (RCore *)user;
 	RConfigNode *node = (RConfigNode *)data;
-	r_return_val_if_fail (node && core && core->anal && core->anal->arch, false);
+	R_RETURN_VAL_IF_FAIL (node && core && core->anal && core->anal->arch, false);
 	if (*node->value == '?') {
 		update_archdecoder_options (core, node);
 		print_node_options (node);
@@ -436,7 +438,7 @@ static bool cb_archdecoder(void *user, void *data) {
 }
 
 static bool cb_archdecoder_getter(RCore *core, RConfigNode *node) {
-	r_return_val_if_fail (node && core && core->anal && core->anal->arch, false);
+	R_RETURN_VAL_IF_FAIL (node && core && core->anal && core->anal->arch, false);
 	free (node->value);
 	if (core->anal->arch->cfg && core->anal->arch->cfg->decoder) {
 		node->value = strdup (core->anal->arch->cfg->decoder);
@@ -470,7 +472,7 @@ static bool cb_arch_platform(void *user, void *data) {
 }
 
 static bool cb_archbits(void *user, void *data) {
-	r_return_val_if_fail (user && data, false);
+	R_RETURN_VAL_IF_FAIL (user && data, false);
 	RCore *core = (RCore *)user;
 	RConfigNode *node = (RConfigNode *)data;
 	r_arch_set_bits (core->anal->arch, node->i_value);
@@ -478,7 +480,7 @@ static bool cb_archbits(void *user, void *data) {
 }
 
 static bool cb_archbits_getter(RCore *core, RConfigNode *node) {
-	r_return_val_if_fail (node && core && core->anal && core->anal->arch, false);
+	R_RETURN_VAL_IF_FAIL (node && core && core->anal && core->anal->arch, false);
 	if (core->anal->arch->cfg) {
 		node->i_value = core->anal->arch->cfg->bits;
 	}
@@ -488,7 +490,7 @@ static bool cb_archbits_getter(RCore *core, RConfigNode *node) {
 static bool cb_archendian(void *user, void *data) {
 	RCore *core = (RCore *)user;
 	RConfigNode *node = (RConfigNode *)data;
-	r_return_val_if_fail (node && core && core->anal && core->anal->arch, false);
+	R_RETURN_VAL_IF_FAIL (node && core && core->anal && core->anal->arch, false);
 	if (!strcmp (node->value, "big") || !strcmp (node->value, "bigswap")) {
 		r_arch_set_endian (core->anal->arch, R_SYS_ENDIAN_BIG);
 		return true;
@@ -615,7 +617,7 @@ static bool cb_asmassembler(void *user, void *data) {
 }
 
 static void update_cmdpdc_options(RCore *core, RConfigNode *node) {
-	r_return_if_fail (core && core->rasm && node);
+	R_RETURN_IF_FAIL (core && core->rasm && node);
 	RListIter *iter;
 	r_config_node_purge_options (node);
 	char *opts = r_core_cmd_str (core, "e cmd.pdc=?");
@@ -630,7 +632,7 @@ static void update_cmdpdc_options(RCore *core, RConfigNode *node) {
 
 static void update_asmcpu_options(RCore *core, RConfigNode *node) {
 	RListIter *iter;
-	r_return_if_fail (core && core->rasm);
+	R_RETURN_IF_FAIL (core && core->rasm);
 	const char *arch = r_config_get (core->config, "asm.arch");
 	if (!arch || !*arch) {
 		return;
@@ -716,7 +718,7 @@ static void update_asmbits_options(RCore *core, RConfigNode *node) {
 static bool cb_asmarch(void *user, void *data) {
 	char asmparser[32];
 	RCore *core = (RCore *) user;
-	r_return_val_if_fail (core && core->anal, false);
+	R_RETURN_VAL_IF_FAIL (core && core->anal, false);
 	RConfigNode *node = (RConfigNode *) data;
 
 	if (R_STR_ISEMPTY (node->value)) {
@@ -830,7 +832,7 @@ static bool cb_dbgbtdepth(void *user, void *data) {
 }
 
 static bool cb_asmbits(void *user, void *data) {
-	r_return_val_if_fail (user && data, false);
+	R_RETURN_VAL_IF_FAIL (user && data, false);
 	RCore *core = (RCore *) user;
 	RConfigNode *node = (RConfigNode *) data;
 
@@ -1399,6 +1401,20 @@ static bool cb_dirsrc(void *user, void *data) {
 	return true;
 }
 
+#if R2_USE_NEW_ABI
+static bool cb_dirsrc_base(void *user, void *data) {
+	RConfigNode *node = (RConfigNode*) data;
+	RCore *core = (RCore *)user;
+	free (core->bin->srcdir);
+	if (R_STR_ISNOTEMPTY (node->value)) {
+		core->bin->srcdir = strdup (node->value);
+	} else {
+		core->bin->srcdir = NULL;
+	}
+	return true;
+}
+#endif
+
 static bool cb_cfgsanbox_grain(void *user, void *data) {
 	RConfigNode *node = (RConfigNode*) data;
 	if (strstr (node->value, "?")) {
@@ -1491,6 +1507,10 @@ static bool cb_cmdpdc(void *user, void *data) {
 		r_list_foreach (core->rcmd->plist, iter, cp) {
 			if (!strcmp (cp->meta.name, "r2retdec")) {
 				r_cons_printf ("pdz\n");
+			} else if (!strcmp (cp->meta.name, "decai")) {
+				r_cons_printf ("decai\n");
+			} else if (!strcmp (cp->meta.name, "r2jadx")) {
+				r_cons_printf ("r2jadx\n");
 			} else if (!strcmp (cp->meta.name, "r2ghidra")) {
 				r_cons_printf ("pdg\n");
 			}
@@ -2791,6 +2811,17 @@ static bool cb_rawstr(void *user, void *data) {
 	core->bin->rawstr = node->i_value;
 	return true;
 }
+static bool cb_bin_classes(void *user, void *data) {
+	RCore *core = (RCore *) user;
+	RConfigNode *node = (RConfigNode *) data;
+	const ut32 req = R_BIN_REQ_CLASSES;
+	if (node->i_value) {
+		core->bin->filter_rules |= req;
+	} else {
+		core->bin->filter_rules &= ~req;
+	}
+	return true;
+}
 
 static bool cb_debase64(void *user, void *data) {
 	RCore *core = (RCore *) user;
@@ -2996,7 +3027,7 @@ static bool cb_analcc(RCore *core, RConfigNode *node) {
 }
 
 static bool cb_anal_roregs(RCore *core, RConfigNode *node) {
-	r_return_val_if_fail (core && core->anal && core->anal->reg, false);
+	R_RETURN_VAL_IF_FAIL (core && core->anal && core->anal->reg, false);
 	r_reg_ro_reset (core->anal->reg, node->value);
 	return true;
 }
@@ -3021,6 +3052,27 @@ static bool cb_anal_from(RCore *core, RConfigNode *node) {
 				r_config_get_i (core->config, "anal.from"),
 				r_config_get_i (core->config, "anal.to"));
 	}
+	return true;
+}
+
+static bool cb_anal_fixed_bits(void *user, void *_node) {
+	RConfigNode *node = _node;
+	RCore *core = (RCore*)user;
+	core->fixedbits = node->i_value;
+	return true;
+}
+
+static bool cb_anal_fixed_arch(void *user, void *_node) {
+	RConfigNode *node = _node;
+	RCore *core = (RCore*)user;
+	core->fixedarch = node->i_value;
+	return true;
+}
+
+static bool cb_anal_fixed_thumb(void *user, void *_node) {
+	RConfigNode *node = _node;
+	RCore *core = (RCore*)user;
+	core->anal->opt.armthumb = !node->i_value;
 	return true;
 }
 
@@ -3423,10 +3475,15 @@ R_API int r_core_config_init(RCore *core) {
 	SETCB ("anal.roregs", "gp,zero", (RConfigCallback)&cb_anal_roregs, "comma separated list of register names to be readonly");
 	SETICB ("anal.cs", 0, (RConfigCallback)&cb_anal_cs, "set the value for the x86-16 CS segment register (see asm.offset.segment and asm.offset.segment.bits)");
 	SETICB ("anal.gp", 0, (RConfigCallback)&cb_anal_gp, "set the value of the GP register (MIPS)");
-	SETBPREF ("anal.gpfixed", "true", "set gp register to anal.gp before emulating each instruction in aae");
+	SETBPREF ("anal.fixed.gp", "true", "set gp register to anal.gp before emulating each instruction in aae");
+	SETCB ("anal.fixed.arch", "false", &cb_anal_fixed_arch, "permit arch changes during analysis");
+	SETCB ("anal.fixed.bits", "false", &cb_anal_fixed_bits, "permit bits changes during analysis (arm/thumb)");
+	SETCB ("anal.fixed.thumb", "true", &cb_anal_fixed_thumb, "permit switching between arm:32 and arm:16 during analysis");
 	SETCB ("anal.limits", "false", (RConfigCallback)&cb_anal_limits, "restrict analysis to address range [anal.from:anal.to]");
 	SETCB ("anal.noret.refs", "false", (RConfigCallback)&cb_anal_noret_refs, "recursive no return checks (EXPERIMENTAL)");
 	SETCB ("anal.slow", "true", (RConfigCallback)&cb_anal_slow, "uses emulation and deeper analysis for better results");
+	SETPREF ("anal.emu", "true", "run aaef after analysis");
+	SETPREF ("anal.emumem", "false", "run aaef with memory cache enabled after analysis (EXPERIMENTAL)");
 	SETCB ("anal.noret", "true", (RConfigCallback)&cb_anal_noret, "propagate noreturn attributes (EXPERIMENTAL)");
 	SETCB ("anal.limits", "false", (RConfigCallback)&cb_anal_limits, "restrict analysis to address range [anal.from:anal.to]");
 	SETICB ("anal.from", -1, (RConfigCallback)&cb_anal_from, "lower limit on the address range for analysis");
@@ -3444,11 +3501,11 @@ R_API int r_core_config_init(RCore *core) {
 		"anal.fcn", "anal.bb",
 	NULL);
 	SETI ("anal.timeout", 0, "stop analyzing after a couple of seconds");
+	SETCB ("anal.flagends", "true", &cb_anal_flagends, "end function when a flag is found");
 	SETCB ("anal.jmp.retpoline", "true", &cb_anal_jmpretpoline, "analyze retpolines, may be slower if not needed");
 	SETCB ("anal.jmp.tailcall", "true", &cb_anal_jmptailcall, "consume a branch as a call if delta is a function");
 	SETICB ("anal.jmp.tailcall.delta", 0, &cb_anal_jmptailcall_delta, "consume a branch as a call if delta is big");
 
-	SETCB ("anal.armthumb", "false", &cb_analarmthumb, "aae computes arm/thumb changes (lot of false positives ahead)");
 	SETCB ("anal.delay", "true", &cb_anal_delay, "enable delay slot analysis if supported by the architecture");
 #if __wasi__
 	SETICB ("anal.depth", 32, &cb_analdepth, "max depth at code analysis");
@@ -3471,7 +3528,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETCB ("anal.vars", "true", &cb_analvars, "analyze local variables and arguments");
 	SETCB ("anal.vars.stackname", "false", &cb_analvars_stackname, "name variables based on their offset on the stack");
 	SETCB ("anal.vars.newstack", "false", &cb_analvars_newstack, "use new sp-relative variable analysis (EXPERIMENTAL)");
-	SETBPREF ("anal.vinfun", "true",  "search values in functions (aav) (false by default to only find on non-code)");
+	SETBPREF ("anal.vinfun", "false",  "search values in functions (aav) (false by default to only find on non-code)");
 	SETBPREF ("anal.vinfunrange", "false",  "search values outside function ranges (requires anal.vinfun=false)\n");
 	SETCB ("anal.norevisit", "false", &cb_analnorevisit, "do not visit function analysis twice (EXPERIMENTAL)");
 	SETCB ("anal.nopskip", "true", &cb_analnopskip, "skip nops at the beginning of functions");
@@ -3728,6 +3785,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("asm.marks", "true", "show marks before the disassembly");
 
 	// options for the comments in the disassembly
+	SETBPREF ("asm.anos", "true", "show annotations (see ano command)");
 	SETBPREF ("asm.comments", "true", "show comments in disassembly view (see 'e asm.cmt.')");
 	SETBPREF ("asm.cmt.calls", "true", "show callee function related info as comments in disasm");
 	SETBPREF ("asm.cmt.user", "false", "show user comments even if asm.comments is false");
@@ -3761,15 +3819,16 @@ R_API int r_core_config_init(RCore *core) {
 	SETPREF ("bin.cache", "false", "use io.cache.read if bin needs to patch relocs");
 	SETPREF ("bin.lang", "", "language for bin.demangle");
 	SETBPREF ("bin.demangle", "true", "import demangled symbols from RBin");
-	SETCB("bin.demangle.trylib", "true", &cb_demangle_trylib, "try to use system available libraries to demangle");
+	SETCB("bin.demangle.trylib", "false", &cb_demangle_trylib, "try to use system available libraries to demangle");
+	SETCB ("bin.demangle.usecmd", "false", &cb_bdc, "run xcrun swift-demangle and similar if available (SLOW) (see bin.demangle.trylib)");
 	SETBPREF ("bin.demangle.libs", "false", "show library name on demangled symbols names");
 	SETI ("bin.baddr", -1, "base address of the binary");
 	SETI ("bin.laddr", 0, "base address for loading library ('*.so')");
 	SETCB ("bin.dbginfo", "true", &cb_bindbginfo, "load debug information at startup if available");
 	SETBPREF ("bin.relocs", "true", "load relocs information at startup if available");
 	SETBPREF ("bin.relocs.apply", "false", "apply reloc information");
-	SETICB ("bin.str.min", 0, &cb_binminstr, "minimum string length for r_bin");
 	SETICB ("bin.maxsymlen", 0, &cb_binmaxsymlen, "maximum length for symbol names");
+	SETICB ("bin.str.min", 0, &cb_binminstr, "minimum string length for r_bin");
 	SETICB ("bin.str.max", 0, &cb_binmaxstr, "maximum string length for r_bin");
 	SETICB ("bin.str.maxbuf", 1024*1024*10, & cb_binmaxstrbuf, "maximum size of range to load strings from");
 	n = NODECB ("bin.str.enc", "guess", &cb_binstrenc);
@@ -3779,7 +3838,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETCB ("bin.str.raw", "false", &cb_rawstr, "load strings from raw binaries");
 	SETCB ("bin.strings", "true", &cb_binstrings, "load strings from rbin on startup");
 	SETCB ("bin.str.debase64", "false", &cb_debase64, "try to debase64 all strings");
-	SETBPREF ("bin.classes", "true", "load classes from rbin on startup");
+	SETCB ("bin.classes", "true", &cb_bin_classes, "load classes from rbin on startup");
 	SETCB ("bin.verbose", "false", &cb_binverbose, "show RBin warnings when loading binaries");
 
 	/* prj */
@@ -3788,6 +3847,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("prj.vc", "true", "use your version control system of choice (rvc, git) to manage projects");
 	SETBPREF ("prj.zip", "false", "use ZIP format for project files");
 	SETBPREF ("prj.gpg", "false", "TODO: encrypt project with GnuPGv2");
+	SETBPREF ("prj.history", "false", "per-project command history");
 	SETBPREF ("prj.sandbox", "false", "sandbox r2 while loading project files");
 	SETBPREF ("prj.alwasyprompt", "false", "even when the project is already saved, ask the user to save the project when qutting");
 
@@ -3853,6 +3913,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETI ("zign.maxsz", 500, "maximum zignature length");
 	SETI ("zign.minsz", 16, "minimum zignature length for matching");
 	SETI ("zign.mincc", 10, "minimum cyclomatic complexity for matching");
+	SETBPREF ("zign.dups", "false", "allow duplicate zignatures");
 	SETBPREF ("zign.graph", "true", "use graph metrics for matching");
 	SETBPREF ("zign.bytes", "true", "use bytes patterns for matching");
 	SETBPREF ("zign.offset", "false", "use original offset for matching");
@@ -3882,6 +3943,9 @@ R_API int r_core_config_init(RCore *core) {
 		SETPREF ("dir.plugins", path, "path to plugin files to be loaded at startup");
 		free (path);
 	}
+#if R2_USE_NEW_ABI
+	SETCB ("dir.source.base", "", &cb_dirsrc_base, "path to trim out from the one in dwarf");
+#endif
 	SETCB ("dir.source", "", &cb_dirsrc, "path to find source files");
 	SETPREF ("dir.types", "/usr/include", "default colon-separated list of paths to find C headers to cparse types");
 	SETPREF ("dir.libs", "", "specify path to find libraries to load when bin.libs=true");
@@ -3908,7 +3972,6 @@ R_API int r_core_config_init(RCore *core) {
 	SETI ("stack.delta", 0,  "delta for the stack dump");
 
 	/* cmd */
-	SETCB ("cmd.demangle", "false", &cb_bdc, "run xcrun swift-demangle and similar if available (SLOW)");
 	SETICB ("cmd.depth", 10, &cb_cmddepth, "maximum command depth");
 	SETPREF ("cmd.undo", "true", "stack `uc` undo commands when running some commands like w, af, CC, ..");
 	SETPREF ("cmd.bp", "", "run when a breakpoint is hit");
@@ -3976,6 +4039,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETCB ("dbg.trace.continue", "true", &cb_dbg_trace_continue, "trace every instruction between the initial PC position and the PC position at the end of continue's execution");
 	SETBPREF ("dbg.trace.inrange", "false", "while tracing, avoid following calls outside specified range");
 	SETBPREF ("dbg.trace.libs", "true", "trace library code too");
+	SETBPREF ("dbg.trace.eval", "true", "evaluate instructions when tracing (analtp workaround)");
 	SETCB ("dbg.trace", "false", &cb_trace, "trace program execution (see asm.trace)");
 	SETICB ("dbg.trace.tag", 0, &cb_tracetag, "trace tag");
 	/* debug */

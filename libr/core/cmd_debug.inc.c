@@ -784,7 +784,7 @@ static int step_until(RCore *core, ut64 addr) {
 }
 
 static int step_until_esil(RCore *core, const char *esilstr) {
-	r_return_val_if_fail (core && core->dbg && core->dbg->anal && esilstr, false);
+	R_RETURN_VAL_IF_FAIL (core && core->dbg && core->dbg->anal && esilstr, false);
 	if (!core->dbg->anal->esil) {
 		R_LOG_INFO ("esil is not initialized. Run 'aei' first");
 		return false;
@@ -875,7 +875,7 @@ static int step_until_inst(RCore *core, const char *instr, bool regex) {
 }
 
 static bool step_until_optype(RCore *core, const char *_optypes) {
-	r_return_val_if_fail (core && core->dbg && _optypes, false);
+	R_RETURN_VAL_IF_FAIL (core && core->dbg && _optypes, false);
 	RList *optypes_list = NULL;
 	RListIter *iter;
 	char *optype = NULL;
@@ -1484,6 +1484,9 @@ static bool cmd_dmh(RCore *core, const char *input) {
 		return false;
 #endif
 	}
+	if (input[1] == 'j') {
+		r_cons_println ("{}");
+	}
 	return true;
 }
 
@@ -1996,7 +1999,10 @@ static int cmd_debug_map(RCore *core, const char *input) {
 			r_debug_map_sync (core->dbg); // update process memory maps
 			r_debug_map_list (core->dbg, core->offset, input);
 		} else {
-			R_LOG_WARN ("Memory Maps require to be (cfg.debug/-d) in debugger mode. Otherwise use 'om'");
+			R_LOG_INFO ("dm requires the debugger or use `om` instead");
+			if (*input == 'j') {
+				r_cons_println ("{}");
+			}
 		}
 		break;
 	case '=': // "dm="
@@ -2088,15 +2094,23 @@ R_API void r_core_debug_ri(RCore *core, RReg *reg, int mode) {
 	ht_up_free (db);
 }
 
+static const char *mode_to_bitstr(int mode) {
+	switch (mode) {
+	case '3': return "32";
+	case '6': return "64";
+	case '8': return "8";
+	case '1': return "16";
+	}
+	return "";
+}
+
 R_API void r_core_debug_rr(RCore *core, RReg *reg, int mode) {
 	char *color = "";
 	char *colorend = "";
-	int scr_color = r_config_get_i (core->config, "scr.color");
+	const int scr_color = r_config_get_i (core->config, "scr.color");
 	bool use_colors = scr_color != 0;
 	int delta = 0;
 	ut64 diff, value;
-	int bits = core->rasm->config->bits;
-	//XXX: support other RRegisterType
 	RList *list = r_reg_get_list (reg, R_REG_TYPE_GPR);
 	RListIter *iter;
 	RRegItem *r;
@@ -2115,8 +2129,10 @@ R_API void r_core_debug_rr(RCore *core, RReg *reg, int mode) {
 	}
 
 	r_table_set_columnsf (t, "ssss", "role", "reg", "value", "refstr");
+	const char *str = mode_to_bitstr (mode);
+	const int pcbits = grab_bits (core, str, NULL);
 	r_list_foreach (list, iter, r) {
-		if (r->size != bits) {
+		if (r->size != pcbits) {
 			continue;
 		}
 
@@ -2147,7 +2163,7 @@ R_API void r_core_debug_rr(RCore *core, RReg *reg, int mode) {
 			valuestr = r_str_newf ("%s0x%"PFMT64x"%s", color, value, colorend);
 			r_cons_print (Color_RESET);
 		} else {
-			namestr = r_str_new (r->name);
+			namestr = strdup (r->name);
 			valuestr = r_str_newf ("0x%"PFMT64x, value);
 		}
 		ut64 o_offset = core->offset;
@@ -3184,6 +3200,13 @@ static void cmd_debug_reg(RCore *core, const char *str) {
 		case 'j': // "drrj"
 			r_core_debug_rr (core, core->dbg->reg, 'j');
 			break;
+		case ' ':
+			if (isdigit (str[2])) {
+				r_core_debug_rr (core, core->dbg->reg, str[2]);
+			} else {
+				r_core_debug_rr (core, core->dbg->reg, 0);
+			}
+			break;
 		default:
 			r_core_debug_rr (core, core->dbg->reg, 0);
 			break;
@@ -3429,9 +3452,11 @@ static void get_backtrace_info(RCore* core, RDebugFrame* frame, ut64 addr, char*
 			*flagdesc2 = r_str_newf ("%s", f->name);
 		}
 	}
-	if (!strcmp (*flagdesc, *flagdesc2)) {
-		free (*flagdesc2);
-		*flagdesc2 = NULL;
+	if (*flagdesc && *flagdesc2) {
+		if (!strcmp (*flagdesc, *flagdesc2)) {
+			free (*flagdesc2);
+			*flagdesc2 = NULL;
+		}
 	}
 	if (pcstr && spstr) {
 		if (core->dbg->bits & R_SYS_BITS_64) {
@@ -4304,6 +4329,10 @@ static void r_core_debug_esil(RCore *core, const char *input) {
 		r_debug_esil_watch_reset (core->dbg);
 		break;
 	case 'c': // "dec"
+		if (r_str_startswith (input, "cai")) {
+			R_LOG_ERROR ("r2pm -ci decai");
+			break;
+		}
 		if (r_debug_esil_watch_empty (core->dbg)) {
 			R_LOG_ERROR ("no esil watchpoints defined");
 		} else {
@@ -5007,7 +5036,7 @@ static int run_buffer_dxr(RCore *core, RBuffer *buf, bool print, bool ignore_sta
 	char *hexpairs;
 	const char *cmd = ignore_stack? "dxrs": "dxr";
 	int ret = 0;
-	r_return_val_if_fail (core && buf, 1);
+	R_RETURN_VAL_IF_FAIL (core && buf, 1);
 
 	r_buf_seek (buf, 0, R_BUF_SET);
 	raw = r_buf_read_all (buf, &raw_len);
@@ -5532,12 +5561,10 @@ static int cmd_debug(void *data, const char *input) {
 				RAnalOp *op = r_core_op_anal (core, addr, R_ARCH_OP_MASK_HINT);
 				if (op) {
 					RDebugTracepoint *tp = r_debug_trace_add (core->dbg, addr, op->size);
-					if (!tp) {
-						r_anal_op_free (op);
-						break;
+					if (tp) {
+						tp->count = count;
+						r_anal_trace_bb (core->anal, addr);
 					}
-					tp->count = count;
-					r_anal_trace_bb (core->anal, addr);
 					r_anal_op_free (op);
 				} else {
 					R_LOG_ERROR ("Cannot analyze opcode at 0x%08" PFMT64x, addr);

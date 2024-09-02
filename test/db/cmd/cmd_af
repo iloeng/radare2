@@ -307,15 +307,14 @@ minbound: 0x00001119
 maxbound: 0x00001133
 is-lineal: true
 end-bbs: 1
+maxbbins: 8
+midbbins: 8.00
+ratbbins: 1.00
 noreturn: false
 in-degree: 1
 out-degree: 0
 locals: 2
 args: 2
-var int64_t var_4h @ rbp-0x4
-var int64_t var_8h @ rbp-0x8
-arg int64_t arg7 @ xmm0
-arg int64_t arg8 @ xmm1
 
 EOF
 RUN
@@ -435,7 +434,35 @@ afl
 EOF
 EXPECT=<<EOF
 0x0001f8b8    2     20 sym.fstatat
-0x00021484    1      8 sym.__errno
 0x0001f7cc    1     48 sym.__syscall_error
+0x00021484    1      8 sym.__errno
+EOF
+RUN
+
+NAME=af with custom sym.il name
+FILE=bins/mach0/ls-m1
+ARGS=-a arm -b 64
+CMDS=<<EOF
+sn
+sn
+s
+f sym.il.piltrafilla
+af
+pd 2
+EOF
+EXPECT=<<EOF
+0x1000047a8
+            ;-- func.1000047a8:
+/ 688: sym.il.piltrafilla (int64_t arg1, int64_t arg2, int64_t arg3);
+|           ; arg int64_t arg1 @ x0
+|           ; arg int64_t arg2 @ x1
+|           ; arg int64_t arg3 @ x2
+|           ; var int64_t var_10h @ sp+0x10
+|           ; var int64_t var_20h @ sp+0x20
+|           ; var int64_t var_30h @ sp+0x30
+|           ; var int64_t var_40h @ sp+0x40
+|           ; var int64_t var_50h @ sp+0x50
+|           0x1000047a8      7f2303d5       pacibsp
+|           0x1000047ac      fc6fbaa9       stp x28, x27, [sp, -0x60]!
 EOF
 RUN

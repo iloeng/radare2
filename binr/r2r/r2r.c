@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2020-2023 - pancake, thestr4ng3r */
+/* radare - LGPL - Copyright 2020-2024 - pancake, thestr4ng3r */
 
 #include "r2r.h"
 #if ALLINC
@@ -61,7 +61,22 @@ static void parse_skip(const char *arg) {
 	}
 }
 
-static int help(bool verbose) {
+static void helpvars(int workers_count) {
+	printf (
+		"R2R_SKIP_ARCHOS=0  # do not run the arch-os-specific tests\n"
+		"R2R_SKIP_JSON=0    # do not run the JSON tests\n"
+		"R2R_SKIP_FUZZ=0    # do not run the fuzz tests\n"
+		"R2R_SKIP_UNIT=0    # do not run the unit tests\n"
+		"R2R_SKIP_CMD=0     # do not run the cmds tests\n"
+		"R2R_SKIP_ASM=0     # do not run the rasm2 tests\n"
+		"R2R_JOBS=%d         # maximum parallel jobs\n"
+		"R2R_TIMEOUT=%d   # timeout after 1 minute (60 * 60)\n"
+		"R2R_OFFLINE=0      # same as passing -u\n"
+		, workers_count, TIMEOUT_DEFAULT
+	       );
+}
+
+static int help(bool verbose, int workers_count) {
 	printf ("Usage: r2r [-qvVnLi] [-C dir] [-F dir] [-f file] [-o file] [-s test] [-t seconds] [-j threads] [test file/dir | @test-type]\n");
 	if (verbose) {
 		printf (
@@ -72,6 +87,7 @@ static int help(bool verbose) {
 		" -f [file]    file to use for json tests (default is "JSON_TEST_FILE_DEFAULT")\n"
 		" -g           run the tests specified via '// R2R' comments in modified source files\n"
 		" -h           print this help\n"
+		" -H           display environment variables\n"
 		" -i           interactive mode\n"
 		" -j [threads] how many threads to use for running tests concurrently (default is "WORKERS_DEFAULT_STR")\n"
 		" -n           do nothing (don't run any test, just load/parse them)\n"
@@ -81,16 +97,9 @@ static int help(bool verbose) {
 		" -t [seconds] timeout per test (default is "TIMEOUT_DEFAULT_STR")\n"
 		" -u           do not git pull/clone test/bins (See R2R_OFFLINE)\n"
 		" -v           show version\n"
-		"\n"
-		"R2R_SKIP_ARCHOS=1  # do not run the arch-os-specific tests\n"
-		"R2R_SKIP_JSON=1    # do not run the JSON tests\n"
-		"R2R_SKIP_FUZZ=1    # do not run the fuzz tests\n"
-		"R2R_SKIP_UNIT=1    # do not run the unit tests\n"
-		"R2R_SKIP_CMD=1     # do not run the cmds tests\n"
-		"R2R_SKIP_ASM=1     # do not run the rasm2 tests\n"
-		"R2R_TIMEOUT=3600   # timeout after 1 minute (60 * 60)\n"
-		"R2R_OFFLINE=1      # same as passing -u\n"
-		"\n"
+		"\n");
+		helpvars (workers_count);
+		printf ("\n"
 		"Supported test types: @asm @json @unit @fuzz @arch @cmd\n"
 		"OS/Arch for archos tests: "R2R_ARCH_OS"\n");
 	}
@@ -308,9 +317,13 @@ int main(int argc, char **argv) {
 		}
 	}
 #endif
+	ut64 r2r_jobs = r_sys_getenv_asut64 ("R2R_JOBS");
+	if (r2r_jobs > 0) {
+		workers_count = r2r_jobs;
+	}
 
 	RGetopt opt;
-	r_getopt_init (&opt, argc, (const char **)argv, "hqvj:r:m:f:C:LnVt:F:io:s:ug");
+	r_getopt_init (&opt, argc, (const char **)argv, "hqvj:r:m:f:C:LnVt:F:io:s:ugH");
 
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
@@ -319,7 +332,7 @@ int main(int argc, char **argv) {
 			r2r_git ();
 			return 0;
 		case 'h':
-			ret = help (true);
+			ret = help (true, workers_count);
 			goto beach;
 		case 'q':
 			quiet = true;
@@ -355,7 +368,7 @@ int main(int argc, char **argv) {
 			workers_count = atoi (opt.arg);
 			if (workers_count <= 0) {
 				R_LOG_ERROR ("Invalid thread count");
-				ret = help (false);
+				ret = help (false, workers_count);
 				goto beach;
 			}
 			break;
@@ -369,6 +382,9 @@ int main(int argc, char **argv) {
 			free (json_test_file);
 			json_test_file = strdup (opt.arg);
 			break;
+		case 'H':
+			helpvars (workers_count);
+			goto beach;
 		case 'u':
 			get_bins = false;
 			break;
@@ -383,7 +399,7 @@ int main(int argc, char **argv) {
 			output_file = r_file_abspath (opt.arg);
 			break;
 		default:
-			ret = help (false);
+			ret = help (false, workers_count);
 			goto beach;
 		}
 	}
@@ -695,7 +711,7 @@ beach:
 }
 
 static void test_result_to_json(PJ *pj, R2RTestResultInfo *result) {
-	r_return_if_fail (pj && result);
+	R_RETURN_IF_FAIL (pj && result);
 	pj_o (pj);
 	pj_k (pj, "type");
 	R2RTest *test = result->test;
@@ -1253,7 +1269,7 @@ static void replace_cmd_kv_file(const char *path, ut64 line_begin, ut64 line_end
 }
 
 static void interact_fix(R2RTestResultInfo *result, RPVector *fixup_results) {
-	r_return_if_fail (result->test->type == R2R_TEST_TYPE_CMD);
+	R_RETURN_IF_FAIL (result->test->type == R2R_TEST_TYPE_CMD);
 	R2RCmdTest *test = result->test->cmd_test;
 	R2RProcessOutput *out = result->proc_out;
 	if (test->expect.value && out->out) {
@@ -1269,7 +1285,7 @@ static void interact_fix(R2RTestResultInfo *result, RPVector *fixup_results) {
 }
 
 static void interact_break(R2RTestResultInfo *result, RPVector *fixup_results) {
-	r_return_if_fail (result->test->type == R2R_TEST_TYPE_CMD);
+	R_RETURN_IF_FAIL (result->test->type == R2R_TEST_TYPE_CMD);
 	R2RCmdTest *test = result->test->cmd_test;
 	ut64 line_begin, line_end;
 	if (test->broken.set) {
@@ -1282,7 +1298,7 @@ static void interact_break(R2RTestResultInfo *result, RPVector *fixup_results) {
 }
 
 static void interact_commands(R2RTestResultInfo *result, RPVector *fixup_results) {
-	r_return_if_fail (result->test->type == R2R_TEST_TYPE_CMD);
+	R_RETURN_IF_FAIL (result->test->type == R2R_TEST_TYPE_CMD);
 	R2RCmdTest *test = result->test->cmd_test;
 	if (!test->cmds.value) {
 		return;

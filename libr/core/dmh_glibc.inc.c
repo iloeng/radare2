@@ -199,7 +199,7 @@ R_API double GH(get_glibc_version)(RCore *core, const char *libc_path) {
 }
 
 static const char* GH(get_libc_filename_from_maps)(RCore *core) {
-	r_return_val_if_fail (core && core->dbg && core->dbg->maps && core->bin && core->bin->file, NULL);
+	R_RETURN_VAL_IF_FAIL (core && core->dbg && core->dbg->maps && core->bin && core->bin->file, NULL);
 	RListIter *iter;
 	RDebugMap *map = NULL;
 
@@ -229,7 +229,7 @@ static const char* GH(get_libc_filename)(RCore *core) {
 }
 
 static bool GH(resolve_glibc_version)(RCore *core) {
-	r_return_val_if_fail (core && core->dbg && core->dbg->maps, false);
+	R_RETURN_VAL_IF_FAIL (core && core->dbg && core->dbg->maps, false);
 
 	double version = 0;
 
@@ -354,14 +354,20 @@ static bool GH(update_main_arena)(RCore *core, GHT m_arena, MallocState *main_ar
 		if (!cmain_arena) {
 			return false;
 		}
-		(void)r_io_read_at (core->io, m_arena, (ut8 *)cmain_arena, sizeof (GH(RHeap_MallocState_227)));
+		if (!r_io_read_at (core->io, m_arena, (ut8 *)cmain_arena, sizeof (GH(RHeap_MallocState_227)))) {
+			R_LOG_ERROR ("Cannot read");
+			return false;
+		}
 		GH(update_arena_with_tc)(cmain_arena, main_arena);
 	} else {
 		GH(RHeap_MallocState_223) *cmain_arena = R_NEW0 (GH(RHeap_MallocState_223));
 		if (!cmain_arena) {
 			return false;
 		}
-		(void)r_io_read_at (core->io, m_arena, (ut8 *)cmain_arena, sizeof (GH(RHeap_MallocState_223)));
+		if (!r_io_read_at (core->io, m_arena, (ut8 *)cmain_arena, sizeof (GH(RHeap_MallocState_223)))) {
+			R_LOG_ERROR ("Cannot read");
+			return false;
+		}
 		GH(update_arena_without_tc)(cmain_arena, main_arena);
 	}
 	return true;
@@ -660,7 +666,7 @@ static GHT GH (get_main_arena_offset_with_relocs) (RCore *core, const char *libc
 }
 
 static bool GH(r_resolve_main_arena)(RCore *core, GHT *m_arena) {
-	r_return_val_if_fail (core && core->dbg && core->dbg->maps, false);
+	R_RETURN_VAL_IF_FAIL (core && core->dbg && core->dbg->maps, false);
 
 	if (core->dbg->main_arena_resolved) {
 		GHT dbg_glibc_main_arena = r_config_get_i (core->config, "dbg.glibc.main_arena");
@@ -966,7 +972,7 @@ static int GH(print_double_linked_list_bin_graph)(RCore *core, GHT bin, MallocSt
 }
 
 static int GH(print_double_linked_list_bin)(RCore *core, MallocState *main_arena, GHT m_arena, GHT offset, GHT num_bin, int graph) {
-	r_return_val_if_fail (core && core->dbg, -1);
+	R_RETURN_VAL_IF_FAIL (core && core->dbg, -1);
 	if (!core->dbg->maps) {
 		return -1;
 	}
@@ -1074,7 +1080,7 @@ static void GH(print_heap_bin)(RCore *core, GHT m_arena, MallocState *main_arena
 
 // TODO. return bool
 static int GH(print_single_linked_list_bin)(RCore *core, MallocState *main_arena, GHT m_arena, GHT offset, GHT bin_num, bool demangle) {
-	r_return_val_if_fail (core && core->dbg, -1);
+	R_RETURN_VAL_IF_FAIL (core && core->dbg, -1);
 	if (!core->dbg->maps) {
 		return -1;
 	}
@@ -1207,7 +1213,7 @@ void GH(print_heap_fastbin)(RCore *core, GHT m_arena, MallocState *main_arena, G
 }
 
 static GH (RTcache)* GH (tcache_new) (RCore *core) {
-	r_return_val_if_fail (core, NULL);
+	R_RETURN_VAL_IF_FAIL (core, NULL);
 	GH (RTcache) *tcache = R_NEW0 (GH (RTcache));
 	if (R_UNLIKELY (!tcache)) {
 		return NULL;
@@ -1223,7 +1229,7 @@ static GH (RTcache)* GH (tcache_new) (RCore *core) {
 }
 
 static void GH (tcache_free) (GH (RTcache)* tcache) {
-	r_return_if_fail (tcache);
+	R_RETURN_IF_FAIL (tcache);
 	tcache->type == NEW
 		? free (tcache->RHeapTcache.heap_tcache)
 		: free (tcache->RHeapTcache.heap_tcache_pre_230);
@@ -1231,28 +1237,35 @@ static void GH (tcache_free) (GH (RTcache)* tcache) {
 }
 
 static bool GH (tcache_read) (RCore *core, GHT tcache_start, GH (RTcache)* tcache) {
-	r_return_val_if_fail (core && tcache, false);
+	R_RETURN_VAL_IF_FAIL (core && tcache, false);
+	if ((st64)(tcache_start | UT16_MAX) <1) {
+		R_LOG_ERROR ("Cannot read at 0x%08"PFMT64x, (ut64)tcache_start);
+		return false;
+	}
+	if (!r_io_is_valid_offset (core->io, tcache_start, R_PERM_R)) {
+		return false;
+	}
 	return tcache->type == NEW
 		? r_io_read_at (core->io, tcache_start, (ut8 *)tcache->RHeapTcache.heap_tcache, sizeof (GH (RHeapTcache)))
 		: r_io_read_at (core->io, tcache_start, (ut8 *)tcache->RHeapTcache.heap_tcache_pre_230, sizeof (GH (RHeapTcachePre230)));
 }
 
 static int GH (tcache_get_count) (GH (RTcache)* tcache, int index) {
-	r_return_val_if_fail (tcache, 0);
+	R_RETURN_VAL_IF_FAIL (tcache, 0);
 	return tcache->type == NEW
 		? tcache->RHeapTcache.heap_tcache->counts[index]
 		: tcache->RHeapTcache.heap_tcache_pre_230->counts[index];
 }
 
 static GHT GH (tcache_get_entry) (GH (RTcache)* tcache, int index) {
-	r_return_val_if_fail (tcache, 0);
+	R_RETURN_VAL_IF_FAIL (tcache, 0);
 	return tcache->type == NEW
 		? tcache->RHeapTcache.heap_tcache->entries[index]
 		: tcache->RHeapTcache.heap_tcache_pre_230->entries[index];
 }
 
 static void GH (tcache_print) (RCore *core, GH (RTcache)* tcache, bool demangle) {
-	r_return_if_fail (core && tcache);
+	R_RETURN_IF_FAIL (core && tcache);
 	GHT tcache_fd = GHT_MAX;
 	GHT tcache_tmp = GHT_MAX;
 	RConsPrintablePalette *pal = &r_cons_singleton ()->context->pal;
@@ -1292,7 +1305,7 @@ static void GH (tcache_print) (RCore *core, GH (RTcache)* tcache, bool demangle)
 }
 
 static void GH (print_tcache_instance)(RCore *core, GHT m_arena, MallocState *main_arena, bool demangle) {
-	r_return_if_fail (core && core->dbg && core->dbg->maps);
+	R_RETURN_IF_FAIL (core && core->dbg && core->dbg->maps);
 
 	const bool tcache = r_config_get_b (core->config, "dbg.glibc.tcache");
 	if (!tcache || m_arena == GHT_MAX) {
@@ -1346,7 +1359,9 @@ static void GH (print_tcache_instance)(RCore *core, GHT m_arena, MallocState *ma
 
 			if (ta->attached_threads) {
 				PRINT_BA ("\n");
-				GH (tcache_read) (core, tcache_start, r_tcache);
+				if (!GH (tcache_read) (core, tcache_start, r_tcache)) {
+					break;
+				}
 				GH (tcache_print) (core, r_tcache, demangle);
 			} else {
 				PRINT_GA (" free\n");
@@ -1358,7 +1373,7 @@ static void GH (print_tcache_instance)(RCore *core, GHT m_arena, MallocState *ma
 
 static void GH(print_heap_segment)(RCore *core, MallocState *main_arena,
 		GHT m_arena, GHT m_state, GHT global_max_fast, int format_out) {
-	r_return_if_fail (core && main_arena);
+	R_RETURN_IF_FAIL (core && main_arena);
 	if (!core->dbg || !core->dbg->maps) {
 		return;
 	}
@@ -1577,7 +1592,9 @@ static void GH(print_heap_segment)(RCore *core, MallocState *main_arena,
 				free (cnk_next);
 				return;
 			}
-			GH (tcache_read) (core, tcache_initial_brk, tcache_heap);
+			if (!GH (tcache_read) (core, tcache_initial_brk, tcache_heap)) {
+				break;
+			}
 			size_t i;
 			for (i = 0; i < TCACHE_MAX_BINS; i++) {
 				int count = GH (tcache_get_count) (tcache_heap, i);

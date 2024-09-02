@@ -1,24 +1,5 @@
-/*
- *  TCC - Tiny C Compiler
- *
- *  Copyright (c) 2001-2004 Fabrice Bellard
- *  Copyright (c) 2016-2024 pancake
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
-#include <r_util.h>
+/* LGPLv2 - Tiny C Compiler - 2001-2004 fbellard, 2009-2024 pancake */
+
 #include "tcc.h"
 
 #ifdef R2__WINDOWS__
@@ -51,6 +32,7 @@ R_API char *strcat2(char *buf, int buf_size, const char *s) {
 	return buf;
 }
 
+// R2_600 - deprecate
 R_API char *pstrncpy(char *out, const char *in, size_t num) {
 	memcpy (out, in, num);
 	out[num] = '\0';
@@ -66,20 +48,14 @@ R_API char *tcc_basename(const char *name) {
 	return p;
 }
 
-/* extract extension part of a file
- *
- * (if no extension, return pointer to end-of-string)
- */
+/* extract extension part of a file / (if no extension, return pointer to end-of-string) */
 R_API char *tcc_fileextension(const char *name) {
 	char *b = tcc_basename (name);
 	char *e = strrchr (b, '.');
 	return e? e: strchr (b, 0);
 }
 
-/********************************************************/
-/********************************************************/
 /* dynarrays */
-
 ST_FUNC void dynarray_add(void ***ptab, int *nb_ptr, void *data) {
 	int nb_alloc;
 	int nb = *nb_ptr;
@@ -132,11 +108,8 @@ static void tcc_split_path(TCCState *s, void ***p_ary, int *p_nb_ary, const char
 	} while (*p);
 }
 
-/********************************************************/
-
 static void strcat_vprintf(char *buf, int buf_size, const char *fmt, va_list ap) {
-	int len;
-	len = strlen (buf);
+	size_t len = strlen (buf);
 	vsnprintf (buf + len, buf_size - len, fmt, ap);
 }
 
@@ -177,7 +150,6 @@ static void error1(TCCState *s1, int is_warning, const char *fmt, va_list ap) {
 		strcat_printf (buf, sizeof (buf), "error: ");
 	}
 	strcat_vprintf (buf, sizeof (buf), fmt, ap);
-
 	if (!s1->error_func) {
 		/* default case */
 		eprintf ("%s\n", buf);
@@ -215,12 +187,9 @@ R_API void tcc_warning(TCCState *s1, const char *fmt, ...) {
 	va_end (ap);
 }
 
-/********************************************************/
 /* I/O layer */
-
 ST_FUNC bool tcc_open_bf(TCCState *s1, const char *filename, int initlen) {
-	int buflen = initlen? initlen: IO_BUF_SIZE;
-
+	const int buflen = initlen? initlen: IO_BUF_SIZE;
 	BufferedFile *bf = malloc (sizeof (BufferedFile) + buflen);
 	if (!bf) {
 		R_LOG_ERROR ("too large buflen");
@@ -255,7 +224,8 @@ ST_FUNC void tcc_close(TCCState *s1) {
 ST_FUNC int tcc_open(TCCState *s1, const char *filename) {
 	int fd;
 	if (!strcmp (filename, "-")) {
-		fd = 0, filename = "stdin";
+		filename = "stdin";
+		fd = 0;
 	} else {
 		fd = open (filename, O_RDONLY | O_BINARY);
 	}
@@ -266,7 +236,6 @@ ST_FUNC int tcc_open(TCCState *s1, const char *filename) {
 	if (fd < 0) {
 		return -1;
 	}
-
 	tcc_open_bf (s1, filename, 0);
 	s1->file->fd = fd;
 	return fd;
@@ -274,80 +243,39 @@ ST_FUNC int tcc_open(TCCState *s1, const char *filename) {
 
 /* compile the C file opened in 'file'. Return non zero if errors. */
 static int tcc_compile(TCCState *s1) {
-	Sym *define_start;
-
 	preprocess_init (s1);
-
+	// define some often used types
 	s1->funcname = "";
-
-	/* define some often used types */
 	s1->int8_type.t = VT_INT8;
 	s1->int16_type.t = VT_INT16;
 	s1->int32_type.t = VT_INT32;
 	s1->int64_type.t = VT_INT64;
-
 	s1->char_pointer_type.t = VT_INT8;
 	mk_pointer (s1, &s1->char_pointer_type);
-
-	if (s1->bits != 64) {
-		s1->size_type.t = VT_INT32;
-	} else {
+	if (s1->bits == 64) {
 		s1->size_type.t = VT_INT64;
+	} else {
+		s1->size_type.t = VT_INT32;
 	}
-
 	s1->func_old_type.t = VT_FUNC;
 	s1->func_old_type.ref = sym_push (s1, SYM_FIELD, &s1->int32_type, FUNC_CDECL, FUNC_OLD);
-
-// FIXME: Should depend on the target options too
-#ifdef TCC_TARGET_ARM
-	arm_init_types ();
-#endif
-
-#if 0
-	/* define 'void *alloca(unsigned int)' builtin function */
-	{
-		Sym *s1;
-
-		p = anon_sym++;
-		sym = sym_push (p, mk_pointer (VT_VOID), FUNC_CDECL, FUNC_NEW);
-		s1 = sym_push (SYM_FIELD, VT_UNSIGNED | VT_INT, 0, 0);
-		s1->next = NULL;
-		sym->next = s1;
-		sym_push (TOK_alloca, VT_FUNC | (p << VT_STRUCT_SHIFT), VT_CONST, 0);
-	}
-#endif
-
-	define_start = s1->define_stack;
-	s1->nocode_wanted = 1;
-
-#ifndef __wasi__
-	const bool sjres = setjmp (s1->error_jmp_buf) == 0;
-#else
-	const bool sjres = false;
-#endif
-	if (sjres) {
-		s1->nb_errors = 0;
-		s1->error_set_jmp_enabled = true;
-		s1->ch = s1->file->buf_ptr[0];
-		s1->tok_flags = TOK_FLAG_BOL | TOK_FLAG_BOF;
-		s1->parse_flags = PARSE_FLAG_PREPROCESS | PARSE_FLAG_TOK_NUM;
-		// parse_flags = PARSE_FLAG_TOK_NUM;
-		// pvtop = vtop;
-		next (s1);
-		tcc_decl0 (s1, VT_CONST, 0);
-		if (s1->tok != TOK_EOF) {
-			expect (s1, "declaration");
-		}
-#if 0
-		if (pvtop != vtop) {
-			eprintf ("internal compiler vstack leak? (%d)", vtop - pvtop);
-		}
-#endif
+	Sym *define_start = s1->define_stack;
+	s1->nocode_wanted = true;
+	s1->nb_errors = 0;
+	s1->error_set_jmp_enabled = true;
+	s1->ch = s1->file->buf_ptr[0];
+	s1->tok_flags = TOK_FLAG_BOL | TOK_FLAG_BOF;
+	s1->parse_flags = PARSE_FLAG_PREPROCESS | PARSE_FLAG_TOK_NUM;
+	// parse_flags = PARSE_FLAG_TOK_NUM;
+	// pvtop = vtop;
+	next (s1);
+	tcc_decl0 (s1, VT_CONST, 0);
+	if (s1->tok != TOK_EOF) {
+		expect (s1, "declaration");
 	}
 	s1->error_set_jmp_enabled = false;
 
-	/* reset define stack, but leave -Dsymbols (may be incorrect if
-	   they are undefined) */
+	/* reset define stack, but leave -Dsymbols (may be incorrect if they are undefined) */
 	free_defines (s1, define_start);
 
 	sym_pop (s1, &s1->global_stack, NULL);
@@ -430,12 +358,9 @@ static void tcc_init_defines(TCCState *s) {
 	const int bits = s->bits;
 	const char *os = s->os;
 	int a = 0, b = 0, c = 0;
-	/* we add dummy defines for some special macros to speed up tests
-	   and to have working defined() */
+	/* we add dummy defines for some special macros to speed up tests and to have working defined() */
 	define_push (s, TOK___LINE__, MACRO_OBJ, NULL, NULL);
 	define_push (s, TOK___FILE__, MACRO_OBJ, NULL, NULL);
-	define_push (s, TOK___DATE__, MACRO_OBJ, NULL, NULL);
-	define_push (s, TOK___TIME__, MACRO_OBJ, NULL, NULL);
 
 	/* define __TINYC__ 92X  */
 	sscanf (TCC_VERSION, "%d.%d.%d", &a, &b, &c);
@@ -448,16 +373,6 @@ static void tcc_init_defines(TCCState *s) {
 	tcc_define_symbol (s, "R_IPI", "");
 	tcc_define_symbol (s, "R_NULLABLE", "");
 	tcc_define_symbol (s, "R_PRINTF_CHECK(a,b)", "");
-#if 0
-	tcc_compile_string (s, "typedef int (*PrintfCallback)(const char *s);");
-	tcc_compile_string (s, "typedef struct RList {} RList;");
-	tcc_compile_string (s, "typedef struct RCore {} RCore;");
-	tcc_compile_string (s, "typedef struct HtUP {} HtUP;");
-	tcc_compile_string (s, "typedef struct HtPP {} HtPP;");
-	tcc_compile_string (s, "typedef struct RStrBuf {} RStrBuf;");
-	tcc_compile_string (s, "typedef struct RStrConstPool {} RStrConstPool;");
-	tcc_compile_string (s, "typedef struct RStack {} RStack;");
-#endif
 
 	/* standard defines */
 	tcc_define_symbol (s, "__STDC__", NULL);
@@ -481,7 +396,7 @@ static void tcc_init_defines(TCCState *s) {
 	tcc_define_symbol (s, "st64", "int64_t");
 
 	/* target defines */
-	if (!strncmp (arch, "x86", 3)) {
+	if (r_str_startswith (arch, "x86")) {
 		if (bits == 32 || bits == 16) {
 			tcc_define_symbol (s, "__i386__", NULL);
 			tcc_define_symbol (s, "__i386", NULL);
@@ -489,7 +404,7 @@ static void tcc_init_defines(TCCState *s) {
 		} else {
 			tcc_define_symbol (s, "__x86_64__", NULL);
 		}
-	} else if (!strncmp (arch, "arm", 3)) {
+	} else if (r_str_startswith (arch, "arm")) {
 		tcc_define_symbol (s, "__ARM_ARCH_4__", NULL);
 		tcc_define_symbol (s, "__arm_elf__", NULL);
 		tcc_define_symbol (s, "__arm_elf", NULL);
@@ -502,48 +417,38 @@ static void tcc_init_defines(TCCState *s) {
 	// TODO: Add other architectures
 	// TODO: Move that in SDB
 
-	if (!strncmp (os, "windows", 7)) {
+	if (r_str_startswith (os, "windows")) {
+		tcc_define_symbol (s, "__WCHAR_TYPE__", "unsigned short");
 		tcc_define_symbol (s, "R2__WINDOWS__", NULL);
 		if (bits == 64) {
 			tcc_define_symbol (s, "_WIN64", NULL);
+			tcc_define_symbol (s, "__SIZE_TYPE__", "unsigned long long");
+			tcc_define_symbol (s, "__PTRDIFF_TYPE__", "long long");
+		} else {
+			tcc_define_symbol (s, "__SIZE_TYPE__", "unsigned long");
+			tcc_define_symbol (s, "__PTRDIFF_TYPE__", "long");
 		}
-	} else {
-		tcc_define_symbol (s, "__unix__", NULL);
-		tcc_define_symbol (s, "__unix", NULL);
-		tcc_define_symbol (s, "unix", NULL);
-
-		if (!strncmp (os, "linux", 5)) {
-			tcc_define_symbol (s, "__linux__", NULL);
-			tcc_define_symbol (s, "__linux", NULL);
-		}
-#define str(s) #s
-		if (!strncmp (os, "freebsd", 7)) {
-			tcc_define_symbol (s, "__FreeBSD__", str ( __FreeBSD__));
-		}
-#undef str
-	}
-
-	/* TinyCC & gcc defines */
-	if (!strncmp (os, "windows", 7) && (bits == 64)) {
-		tcc_define_symbol (s, "__SIZE_TYPE__", "unsigned long long");
-		tcc_define_symbol (s, "__PTRDIFF_TYPE__", "long long");
-	} else {
-		tcc_define_symbol (s, "__SIZE_TYPE__", "unsigned long");
-		tcc_define_symbol (s, "__PTRDIFF_TYPE__", "long");
-	}
-
-	if (!strncmp (os, "windows", 7)) {
-		tcc_define_symbol (s, "__WCHAR_TYPE__", "unsigned short");
 	} else {
 		tcc_define_symbol (s, "__WCHAR_TYPE__", "int");
 		/* glibc defines */
 		tcc_define_symbol (s, "__REDIRECT(name, proto, alias)", "name proto __asm__(#alias)");
 		tcc_define_symbol (s, "__REDIRECT_NTH(name, proto, alias)", "name proto __asm__(#alias) __THROW");
-	}
 
-#ifdef CHAR_IS_UNSIGNED
-	s->char_is_unsigned = true;
-#endif
+		tcc_define_symbol (s, "R2__UNIX__", NULL);
+		tcc_define_symbol (s, "__unix__", NULL);
+		tcc_define_symbol (s, "__unix", NULL);
+		tcc_define_symbol (s, "unix", NULL);
+
+		if (r_str_startswith (os, "linux")) {
+			tcc_define_symbol (s, "__linux__", NULL);
+			tcc_define_symbol (s, "__linux", NULL);
+		}
+#define str(s) #s
+		if (r_str_startswith (os, "freebsd")) {
+			tcc_define_symbol (s, "__FreeBSD__", str (__FreeBSD__));
+		}
+#undef str
+	}
 }
 
 R_API TCCState *tcc_new(const char *arch, int bits, const char *os) {
@@ -643,15 +548,6 @@ R_API int tcc_add_file(TCCState *s1, const char *filename, const char *directory
 	}
 	return tcc_add_file_internal (s1, filename, flags);
 }
-
-#define WD_ALL    0x0001/* warning is activated when using -Wall */
-#define FD_INVERT 0x0002/* invert value before storing */
-
-typedef struct FlagDef {
-	uint16_t offset;
-	uint16_t flags;
-	const char *name;
-} FlagDef;
 
 R_API void tcc_set_callback(TCCState *s, TccCallback cb, char **p) {
 	if (cb) {

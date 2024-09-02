@@ -1,4 +1,4 @@
-/* Copyright radare2 2014-2024 - Author: pancake, vane11ope */
+/* radare2 - LGPL - Copyright 2014-2024 - pancake, vane11ope */
 
 #include <r_core.h>
 
@@ -14,6 +14,7 @@ static void __panels_refresh(RCore *core);
 
 #define MENU_Y 1
 #define PANEL_NUM_LIMIT 16
+#define PANEL_HL_COLOR core->cons->context->pal.graph_box2
 
 #define PANEL_TITLE_DISASSEMBLY      "Disassembly"
 #define PANEL_TITLE_DISASMSUMMARY    "Disassemble Summary"
@@ -75,17 +76,18 @@ static const char *menus[] = {
 };
 
 static const char *menus_File[] = {
-	"New", "Open", "ReOpen", "Close", "Save Layout", "Load Layout", "Clear Saved Layouts", "Quit",
+	"New", "Open File", "ReOpen", "Close File", "--", "Open Project", "Save Project", "Close Project", "--", "Quit",
 	NULL
 };
 
 static const char *menus_Settings[] = {
-	"Colors", "Decompiler", "Disassembly", "Screen",
+	"Edit radare2rc", "--", "Color Themes...", "Decompiler...", "Disassembly...", "Screen...", "--",
+	"Save Layout", "Load Layout", "Clear Saved Layouts",
 	NULL
 };
 
 static const char *menus_ReOpen[] = {
-	"In RW", "In Debugger",
+	"In Read+Write", "In Debugger",
 	NULL
 };
 
@@ -130,7 +132,7 @@ static const char *menus_Emulate[] = {
 };
 
 static const char *menus_Debug[] = {
-	"Registers", "FPU Registers", "XMM Registers", "YMM Registers", "RegisterRefs", "RegisterCols",
+	"Registers", "Bit Registers", "FPU Registers", "XMM Registers", "YMM Registers", "RegisterRefs", "RegisterCols",
 	"DRX", "Breakpoints", "Watchpoints",
 	"Maps", "Modules", "Backtrace", "Locals", "Continue",
 	"Stack", "Step", "Step Over", "Reload",
@@ -138,7 +140,7 @@ static const char *menus_Debug[] = {
 };
 
 static const char *menus_Analyze[] = {
-	"Function", "Symbols", "Program", "BasicBlocks", "Calls", "References",
+	"Function", "Symbols", "Program", "BasicBlocks", "Calls", "Preludes", "References",
 	NULL
 };
 
@@ -160,7 +162,10 @@ static const char *menus_settings_screen[] = {
 
 static const char *menus_Help[] = {
 	"Toggle Help",
+	"Manpages...",
+	"--",
 	"License", "Version", "Full Version",
+	"--",
 	"Fortune", "2048",
 	NULL
 };
@@ -398,6 +403,9 @@ static RPanel *__get_cur_panel(RPanels *panels) {
 }
 
 static bool __check_if_cur_panel(RCore *core, RPanel *panel) {
+	if (core->panels->mode == PANEL_MODE_MENU) {
+		return false;
+	}
 	return __get_cur_panel (core->panels) == panel;
 }
 
@@ -480,7 +488,7 @@ static char *__search_db(RCore *core, const char *title) {
 
 static int __show_status(RCore *core, const char *msg) {
 	r_cons_gotoxy (0, 0);
-	r_cons_printf (R_CONS_CLEAR_LINE"%s[Status] %s"Color_RESET, core->cons->context->pal.graph_box2, msg);
+	r_cons_printf (R_CONS_CLEAR_LINE"%s[Status] %s"Color_RESET, PANEL_HL_COLOR, msg);
 	r_cons_flush ();
 	r_cons_set_raw (true);
 	return r_cons_readchar ();
@@ -489,11 +497,11 @@ static int __show_status(RCore *core, const char *msg) {
 static bool __show_status_yesno(RCore *core, int def, const char *msg) {
 	r_cons_gotoxy (0, 0);
 	r_cons_flush ();
-	return r_cons_yesno (def, R_CONS_CLEAR_LINE"%s[Status] %s"Color_RESET, core->cons->context->pal.graph_box2, msg);
+	return r_cons_yesno (def, R_CONS_CLEAR_LINE"%s[Status] %s"Color_RESET, PANEL_HL_COLOR, msg);
 }
 
 static char *__show_status_input(RCore *core, const char *msg) {
-	char *n_msg = r_str_newf (R_CONS_CLEAR_LINE"%s[Status] %s"Color_RESET, core->cons->context->pal.graph_box2, msg);
+	char *n_msg = r_str_newf (R_CONS_CLEAR_LINE"%s[Status] %s"Color_RESET, PANEL_HL_COLOR, msg);
 	r_cons_gotoxy (0, 0);
 	r_cons_flush ();
 	char *out = r_cons_input (n_msg);
@@ -506,7 +514,7 @@ static bool __check_panel_type(RPanel *panel, const char *type) {
 	if (!panel || !panel->model->cmd || !type) {
 		return false;
 	}
-	char *tmp = r_str_new (panel->model->cmd);
+	char *tmp = strdup (panel->model->cmd);
 	int n = r_str_split (tmp, ' ');
 	if (!n) {
 		free (tmp);
@@ -615,23 +623,23 @@ static void __set_decompiler_cache(RCore *core, char *s) {
 	RAnalFunction *func = r_anal_get_fcn_in (core->anal, core->offset, R_ANAL_FCN_TYPE_NULL);
 	if (func) {
 		if (core->panels_root->cur_pdc_cache) {
-			sdb_ptr_set (core->panels_root->cur_pdc_cache, r_num_as_string (NULL, func->addr, false), r_str_new (s), 0);
+			sdb_ptr_set (core->panels_root->cur_pdc_cache, r_num_as_string (NULL, func->addr, false), strdup (s), 0);
 		} else {
 			Sdb *sdb = sdb_new0 ();
 			const char *pdc_now = r_config_get (core->config, "cmd.pdc");
-			sdb_ptr_set (sdb, r_num_as_string (NULL, func->addr, false), r_str_new (s), 0);
+			sdb_ptr_set (sdb, r_num_as_string (NULL, func->addr, false), strdup (s), 0);
 			core->panels_root->cur_pdc_cache = sdb;
 			if (!sdb_exists (core->panels_root->pdc_caches, pdc_now)) {
-				sdb_ptr_set (core->panels_root->pdc_caches, r_str_new (pdc_now), sdb, 0);
+				sdb_ptr_set (core->panels_root->pdc_caches, strdup (pdc_now), sdb, 0);
 			}
 		}
 	}
 }
 #endif
 
-static void __set_read_only(RCore *core, RPanel *p, char *s) {
+static void __set_read_only(RCore *core, RPanel *p, R_NULLABLE const char *s) {
 	free (p->model->readOnly);
-	p->model->readOnly = r_str_new (s);
+	p->model->readOnly = R_STR_DUP (s);
 	__set_dcb (core, p);
 	__set_pcb (p);
 }
@@ -746,18 +754,16 @@ static void __update_help_title(RCore *core, RPanel *panel) {
 	RStrBuf *title = r_strbuf_new (NULL);
 	RStrBuf *cache_title = r_strbuf_new (NULL);
 	if (__check_if_cur_panel (core, panel)) {
-		r_strbuf_setf (title, "%s[X] %s"Color_RESET,
-				core->cons->context->pal.graph_box2, panel->model->title);
+		r_strbuf_setf (title, "%s[X] %s"Color_RESET, PANEL_HL_COLOR, panel->model->title);
 		if (panel->view->pos.w > 16) {
-			// r_strbuf_setf (cache_title, "%s[Cache] N/A"Color_RESET, core->cons->context->pal.graph_box2);
-			// r_strbuf_setf (cache_title, "%s[Cache] %s"Color_RESET, core->cons->context->pal.graph_box2, panel->model->cache ? "On" : "Off");
-			r_strbuf_setf (cache_title, "%s[&%s]"Color_RESET, core->cons->context->pal.graph_box2, panel->model->cache ? " cache" : "");
+			r_strbuf_setf (cache_title, "%s[&%s]"Color_RESET, PANEL_HL_COLOR, panel->model->cache ? " cache" : "");
 		}
 	} else {
-		r_strbuf_setf (title, "[X]   %s   ", panel->model->title);
+		// r_strbuf_setf (title, "[X]   %s   ", panel->model->title);
+		r_strbuf_setf (title, " o    %s   ", panel->model->title);
 		if (panel->view->pos.w > 24) {
 			// r_strbuf_setf (cache_title, "[Cache] %s", panel->model->cache ? "On" : "Off");
-			r_strbuf_setf (cache_title, "%s[&%s]"Color_RESET, core->cons->context->pal.graph_box2, panel->model->cache ? " cache" : "");
+			r_strbuf_setf (cache_title, "%s[&%s]"Color_RESET, PANEL_HL_COLOR, panel->model->cache ? " cache" : "");
 			// r_strbuf_set (cache_title, "[Cache] N/A");
 		}
 	}
@@ -845,24 +851,23 @@ static void __update_panel_title(RCore *core, RPanel *panel) {
 			tit = strdup ("");
 		}
 		if (__check_if_cur_panel (core, panel)) {
-			r_strbuf_setf (title, "%s[X] "Color_RESET, core->cons->context->pal.graph_box2);
+			r_strbuf_setf (title, Color_INVERT"%s[X] ", PANEL_HL_COLOR);
 			if (panel->view->pos.w > 4) {
-				r_strbuf_appendf (title, "%s"Color_RESET, r_str_get (tit));
+				r_strbuf_appendf (title, "%s", r_str_get (tit));
 			} else {
-				r_strbuf_appendf (title, "%s (%s)"Color_RESET, tit?tit:"", cmd_title);
+				r_strbuf_appendf (title, "%s (%s)", tit?tit:"", cmd_title);
 			}
 			if (panel->view->pos.w > 24) {
-			// 	r_strbuf_setf (cache_title, "%s[Cache] %s"Color_RESET, core->cons->context->pal.graph_box2, panel->model->cache ? "On" : "Off");
-				r_strbuf_setf (cache_title, "%s[&%s]"Color_RESET, core->cons->context->pal.graph_box2, panel->model->cache ? " cache" : "");
+				r_strbuf_setf (cache_title, "%s[&%s]"Color_RESET, PANEL_HL_COLOR, panel->model->cache ? " cache" : "");
 			}
 		} else {
-			if (cmd_title && !strcmp (panel->model->title, cmd_title)) {
-				r_strbuf_setf (title, "[X]   %s   ", tit);
+			if (cmd_title && !strcmp (panel->model->title, tit)) {
+				r_strbuf_setf (title, " =  %s   ", tit);
 			} else {
-				r_strbuf_setf (title, "[X]   %s (%s)  ", panel->model->title, tit);
+				r_strbuf_setf (title, " =  %s (%s)  ", panel->model->title, tit);
 			}
 			if (panel->view->pos.w > 24) {
-				r_strbuf_setf (cache_title, "%s[&%s]"Color_RESET, core->cons->context->pal.graph_box2, panel->model->cache ? " cache" : "");
+				r_strbuf_setf (cache_title, "%s[&%s]"Color_RESET, PANEL_HL_COLOR, panel->model->cache ? " cache" : "");
 				// r_strbuf_setf (cache_title, "[Cache] %s", panel->model->cache ? "On" : "Off");
 			}
 		}
@@ -872,7 +877,7 @@ static void __update_panel_title(RCore *core, RPanel *panel) {
 		__update_help_title (core, panel);
 #endif
 	} else {
-		r_strbuf_setf (cache_title, "%s[X] %s"Color_RESET, core->cons->context->pal.graph_box2, "");
+		r_strbuf_setf (cache_title, "%s[X] %s"Color_RESET, PANEL_HL_COLOR, "");
 	}
 	r_strbuf_slice (title, 0, panel->view->pos.w);
 	r_strbuf_slice (cache_title, 0, panel->view->pos.w);
@@ -1110,8 +1115,10 @@ static void __update_help(RCore *core, RPanels *ps) {
 				break;
 			}
 			char *drained = r_strbuf_drain (rsb);
-			__set_read_only (core, p, drained);
-			free (drained);
+			if (drained) {
+				__set_read_only (core, p, drained);
+				free (drained);
+			}
 			p->view->refresh = true;
 		}
 	}
@@ -1252,6 +1259,10 @@ static void __adjust_and_add_panel(RCore *core, const char *name, char *cmd) {
 	RPanel *p0 = __get_panel (panels, 0);
 	__set_geometry (&p0->view->pos, 0, 1, available_space + 1, h - 1);
 	__set_curnode (core, 0);
+}
+
+static int __separator(void *user) {
+	return 0;
 }
 
 static int __add_cmd_panel(void *user) {
@@ -1937,6 +1948,7 @@ static void __init_sdb(RCore *core) {
 	sdb_set (db, "Stack", "pxr@r:SP", 0);
 	sdb_set (db, "Locals", "afvd", 0);
 	sdb_set (db, "Registers", "dr", 0);
+	sdb_set (db, "Bit Registers", "dr 1", 0);
 	sdb_set (db, "FPU Registers", PANEL_CMD_FPU_REGISTERS, 0);
 	sdb_set (db, "XMM Registers", PANEL_CMD_XMM_REGISTERS, 0);
 	sdb_set (db, "YMM Registers", PANEL_CMD_YMM_REGISTERS, 0);
@@ -2111,6 +2123,72 @@ static void __update_disassembly_or_open(RCore *core) {
 	}
 }
 
+static int __help_manpage_radare2_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd0 (core, "man radare2");
+	return 0;
+}
+
+static int __help_manpage_rabin2_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd0 (core, "man rabin2");
+	return 0;
+}
+
+static int __help_manpage_rasm2_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd0 (core, "man rasm2");
+	return 0;
+}
+
+static int __help_manpage_r2agent_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd0 (core, "man r2agent");
+	return 0;
+}
+
+static int __help_manpage_ragg2_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd0 (core, "man ragg2");
+	return 0;
+}
+
+static int __help_manpage_ravc2_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd0 (core, "man ravc2");
+	return 0;
+}
+
+static int __help_manpage_rax2_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd0 (core, "man rax2");
+	return 0;
+}
+
+static int __help_manpage_rahash2_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd0 (core, "man rahash2");
+	return 0;
+}
+
+static int __help_manpage_rafind2_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd0 (core, "man rafind2");
+	return 0;
+}
+
+static int __help_manpage_rarun2_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd0 (core, "man rarun2");
+	return 0;
+}
+
+static int __help_manpage_rasign2_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd0 (core, "man rasign2");
+	return 0;
+}
+
 static int __continue_cb(void *user) {
 	RCore *core = (RCore *)user;
 	r_core_cmd (core, "dc", 0);
@@ -2218,7 +2296,7 @@ static int __show_all_decompiler_cb(void *user) {
 		r_config_set (core->config, "cmd.pdc", opt);
 		RPanel *panel = __get_panel (panels, i++);
 		panels->n_panels = i;
-		panel->model->title = r_str_new (opt);
+		panel->model->title = strdup (opt);
 		__set_read_only (core, panel, r_core_cmd_str (core, opt));
 	}
 	__layout_equal_hor (panels);
@@ -2241,7 +2319,7 @@ static void __init_modal_db(RCore *core) {
 	SdbList *sdb_list = sdb_foreach_list (core->panels->db, true);
 	ls_foreach (sdb_list, sdb_iter, kv) {
 		const char *key = sdbkv_key (kv);
-		sdb_ptr_set (db, r_str_new (key), &__create_panel_db, 0);
+		sdb_ptr_set (db, strdup (key), &__create_panel_db, 0);
 	}
 	sdb_ptr_set (db, "Search strings in data sections", &__search_strings_data_create, 0);
 	sdb_ptr_set (db, "Search strings in the whole bin", &__search_strings_bin_create, 0);
@@ -2521,7 +2599,7 @@ static void __handle_tab_new_with_cur_panel(RCore *core) {
 	RPanel *new_panel = __get_panel (new_panels, 0);
 	__init_panel_param (core, new_panel, cur->model->title, cur->model->cmd);
 	new_panel->model->cache = cur->model->cache;
-	new_panel->model->funcName = r_str_new (cur->model->funcName);
+	new_panel->model->funcName = strdup (cur->model->funcName);
 	__set_cmd_str_cache (core, new_panel, cur->model->cmdStrCache);
 	__maximize_panel_size (new_panels);
 
@@ -3847,7 +3925,7 @@ static char *__get_word_from_canvas_for_menu(RCore *core, RPanels *panels, int x
 		tmp++;
 		i++;
 	}
-	char *ret = r_str_newlen (pos += strlen (padding), i - strlen (padding));
+	char *ret = R_STR_NDUP (pos += strlen (padding), i - strlen (padding));
 	if (!ret) {
 		ret = strdup (pos);
 	}
@@ -3941,8 +4019,7 @@ static RStrBuf *__draw_menu(RCore *core, RPanelsMenuItem *item) {
 	size_t i;
 	for (i = 0; i < item->n_sub; i++) {
 		if (i == item->selectedIndex) {
-			r_strbuf_appendf (buf, "%s> %s"Color_RESET,
-					core->cons->context->pal.graph_box2, item->sub[i]->name);
+			r_strbuf_appendf (buf, "%s> %s"Color_RESET, PANEL_HL_COLOR, item->sub[i]->name);
 		} else {
 			r_strbuf_appendf (buf, "  %s", item->sub[i]->name);
 		}
@@ -4009,7 +4086,7 @@ static bool __draw_modal(RCore *core, RModal *modal, int range_end, int start, c
 		return false;
 	}
 	if (start == modal->idx) {
-		r_strbuf_appendf (modal->data, ">  %s%s"Color_RESET, core->cons->context->pal.graph_box2, name);
+		r_strbuf_appendf (modal->data, ">  %s%s"Color_RESET, PANEL_HL_COLOR, name);
 	} else {
 		r_strbuf_appendf (modal->data, "   %s", name);
 	}
@@ -4054,7 +4131,7 @@ static void __update_modal(RCore *core, Sdb *menu_db, RModal *modal, int delta) 
 	r_cons_canvas_write (can, r_strbuf_get (modal->data));
 	r_strbuf_free (modal->data);
 
-	r_cons_canvas_box (can, modal->pos.x, modal->pos.y, modal->pos.w + 2, modal->pos.h + 2, core->cons->context->pal.graph_box2);
+	r_cons_canvas_box (can, modal->pos.x, modal->pos.y, modal->pos.w + 2, modal->pos.h + 2, PANEL_HL_COLOR);
 
 	print_notch (core);
 	r_cons_canvas_print (can);
@@ -4610,7 +4687,7 @@ static void __print_decompiler_cb(void *user, void *p) {
 	return;
 #if 0
 	if (core->panels_root->cur_pdc_cache) {
-		cmdstr = r_str_new ((char *)sdb_ptr_get (core->panels_root->cur_pdc_cache,
+		cmdstr = R_STR_DUP ((char *)sdb_ptr_get (core->panels_root->cur_pdc_cache,
 					r_num_as_string (NULL, func->addr, false), 0));
 		if (R_STR_ISNOTEMPTY (cmdstr)) {
 			__set_cmd_str_cache (core, panel, cmdstr);
@@ -5086,6 +5163,24 @@ static int __close_file_cb(void *user) {
 	return 0;
 }
 
+static int __project_open_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd0 (core, "Po `?i ProjectName`");
+	return 0;
+}
+
+static int __project_save_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd_call (core, "Ps");
+	return 0;
+}
+
+static int __project_close_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmd_call (core, "Pc");
+	return 0;
+}
+
 static int __save_layout_cb(void *user) {
 	RCore *core = (RCore *)user;
 	r_core_panels_save (core, NULL);
@@ -5134,13 +5229,17 @@ static void __add_menu(RCore *core, const char *parent, const char *name, RPanel
 		p_item = panels->panels_menu->root;
 		ht_pp_insert (panels->mht, r_strf ("%s", name), item);
 	}
+	if (p_item == NULL) {
+		R_LOG_WARN ("Cannot find panel %s", parent);
+		r_sys_sleep (1);
+	}
 	item->n_sub = 0;
 	item->selectedIndex = 0;
-	item->name = name ? r_str_new (name) : NULL;
+	item->name = R_STR_DUP (name);
 	item->sub = NULL;
 	item->cb = cb;
 	item->p = R_NEW0 (RPanel);
-	if (item->p) {
+	if (item->p && p_item) {
 		item->p->model = R_NEW0 (RPanelModel);
 		item->p->view = R_NEW0 (RPanelView);
 		if (item->p->model && item->p->view) {
@@ -5197,7 +5296,7 @@ static int __clear_layout_cb(void *user) {
 	r_list_free (dir);
 	free (dir_path);
 
-	__update_menu (core, "File.Load Layout.Saved", __init_menu_saved_layout);
+	__update_menu (core, "Settings.Load Layout.Saved", __init_menu_saved_layout);
 	return 0;
 }
 
@@ -5250,7 +5349,7 @@ static int __settings_colors_cb(void *user) {
 		p->view->refresh = true;
 		menu->refreshPanels[i - 1] = p;
 	}
-	__update_menu (core, "Settings.Colors", __init_menu_color_settings_layout);
+	__update_menu (core, "Settings.Color Themes...", __init_menu_color_settings_layout);
 	return 0;
 }
 
@@ -5273,7 +5372,7 @@ static int __config_value_cb(void *user) {
 		menu->refreshPanels[i - 1] = p;
 	}
 	if (!strcmp (parent->name, "asm")) {
-		__update_menu (core, "Settings.Disassembly.asm", __init_menu_disasm_asm_settings_layout);
+		__update_menu (core, "Settings.Disassembly....asm", __init_menu_disasm_asm_settings_layout);
 	}
 	if (!strcmp (parent->name, "Screen")) {
 		__update_menu (core, "Settings.Screen", __init_menu_screen_settings_layout);
@@ -5299,9 +5398,8 @@ static int __config_toggle_cb(void *user) {
 		menu->refreshPanels[i - 1] = p;
 	}
 	if (!strcmp (parent->name, "asm")) {
-		__update_menu (core, "Settings.Disassembly.asm", __init_menu_disasm_asm_settings_layout);
-	}
-	if (!strcmp (parent->name, "Screen")) {
+		__update_menu (core, "Settings.Disassembly....asm", __init_menu_disasm_asm_settings_layout);
+	} else if (!strcmp (parent->name, "Screen")) {
 		__update_menu (core, "Settings.Screen", __init_menu_screen_settings_layout);
 	}
 	return 0;
@@ -5330,7 +5428,7 @@ static int __calculator_cb(void *user) {
 	RCore *core = (RCore *)user;
 	for (;;) {
 		char *s = __show_status_input (core, "> ");
-		if (!s || !*s) {
+		if (R_STR_ISEMPTY (s)) {
 			free (s);
 			break;
 		}
@@ -5487,6 +5585,18 @@ static int __program_cb(void *user) {
 	return 0;
 }
 
+static int __aae_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmdf (core, "aae");
+	return 0;
+}
+
+static int __aap_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_core_cmdf (core, "aap");
+	return 0;
+}
+
 static int __basic_blocks_cb(void *user) {
 	RCore *core = (RCore *)user;
 	r_core_cmdf (core, "aab");
@@ -5537,7 +5647,7 @@ static int __help_cb(void *user) {
 }
 
 static int __license_cb(void *user) {
-	r_cons_message ("Copyright 2006-2023 - pancake - LGPL");
+	r_cons_message ("Copyright 2006-2024 - pancake - LGPL");
 	return 0;
 }
 
@@ -5557,6 +5667,15 @@ static int __version_cb(void *user) {
 	char *s = r_core_cmd_str (core, "?V");
 	r_cons_message (s);
 	free (s);
+	return 0;
+}
+
+static int __r2rc_cb(void *user) {
+	RCore *core = (RCore *)user;
+	r_cons_set_raw (false);
+	r_core_cmd0 (core, "edit");
+	r_cons_set_raw (true);
+	r_cons_flush ();
 	return 0;
 }
 
@@ -5620,19 +5739,33 @@ static RList *__sorted_list(RCore *core, const char *menu[], int count) {
 	return list;
 }
 
+static void __init_menu_manpages(void *_core, const char *parent) {
+	RCore *core = (RCore *)_core;
+	__add_menu (core, parent, "r2agent", __help_manpage_r2agent_cb);
+	__add_menu (core, parent, "rabin2", __help_manpage_rabin2_cb);
+	__add_menu (core, parent, "radare2", __help_manpage_radare2_cb);
+	__add_menu (core, parent, "rafind2", __help_manpage_rafind2_cb);
+	__add_menu (core, parent, "ragg2", __help_manpage_ragg2_cb);
+	__add_menu (core, parent, "rahash2", __help_manpage_rahash2_cb);
+	__add_menu (core, parent, "rarun2", __help_manpage_rarun2_cb);
+	__add_menu (core, parent, "rasign2", __help_manpage_rasign2_cb);
+	__add_menu (core, parent, "rasm2", __help_manpage_rasm2_cb);
+	__add_menu (core, parent, "ravc2", __help_manpage_ravc2_cb);
+	__add_menu (core, parent, "rax2", __help_manpage_rax2_cb);
+}
+
 static void __init_menu_color_settings_layout(void *_core, const char *parent) {
 	RCore *core = (RCore *)_core;
-	const char *color = core->cons->context->pal.graph_box2;
 	char *now = r_core_cmd_str (core, "eco.");
 	r_str_split (now, '\n');
-	parent = "Settings.Colors";
+	parent = "Settings.Color Themes...";
 	RList *list = __sorted_list (core, (const char **)core->visual.menus_Colors, COUNT (core->visual.menus_Colors));
 	char *pos;
 	RListIter* iter;
 	RStrBuf *buf = r_strbuf_new (NULL);
 	r_list_foreach (list, iter, pos) {
 		if (pos && !strcmp (now, pos)) {
-			r_strbuf_setf (buf, "%s%s", color, pos);
+			r_strbuf_setf (buf, "%s%s", PANEL_HL_COLOR, pos);
 			__add_menu (core, parent, r_strbuf_get (buf), __settings_colors_cb);
 			continue;
 		}
@@ -5652,7 +5785,7 @@ static void __init_menu_disasm_settings_layout(void *_core, const char *parent) 
 	r_list_foreach (list, iter, pos) {
 		if (!strcmp (pos, "asm")) {
 			__add_menu (core, parent, pos, __open_menu_cb);
-			__init_menu_disasm_asm_settings_layout (core, "Settings.Disassembly.asm");
+			__init_menu_disasm_asm_settings_layout (core, "Settings.Disassembly....asm");
 		} else {
 			r_strbuf_set (rsb, pos);
 			r_strbuf_append (rsb, ": ");
@@ -5722,50 +5855,67 @@ static bool __init_panels_menu(RCore *core) {
 	}
 	const char *parent = "File";
 	for (i = 0; menus_File[i]; i++) {
-		if (!strcmp (menus_File[i], "Open")) {
-			__add_menu (core, parent, menus_File[i], __open_file_cb);
-		} else if (!strcmp (menus_File[i], "ReOpen")) {
-			__add_menu (core, parent, menus_File[i], __open_menu_cb);
-		} else if (!strcmp (menus_File[i], "Close")) {
-			__add_menu (core, parent, menus_File[i], __close_file_cb);
-		} else if (!strcmp (menus_File[i], "Save Layout")) {
-			__add_menu (core, parent, menus_File[i], __save_layout_cb);
-		} else if (!strcmp (menus_File[i], "Load Layout")) {
-			__add_menu (core, parent, menus_File[i], __open_menu_cb);
-		} else if (!strcmp (menus_File[i], "Clear Saved Layouts")) {
-			__add_menu (core, parent, menus_File[i], __clear_layout_cb);
-		} else if (!strcmp (menus_File[i], "Quit")) {
-			__add_menu (core, parent, menus_File[i], __quit_cb);
+		const char *menu = menus_File[i];
+		if (!strcmp (menu, "Open File")) {
+			__add_menu (core, parent, menu, __open_file_cb);
+		} else if (!strcmp (menu, "ReOpen")) {
+			__add_menu (core, parent, menu, __open_menu_cb);
+		} else if (!strcmp (menu, "Close File")) {
+			__add_menu (core, parent, menu, __close_file_cb);
+		} else if (!strcmp (menu, "Open Project")) {
+			__add_menu (core, parent, menu, __project_open_cb);
+		} else if (!strcmp (menu, "Save Project")) {
+			__add_menu (core, parent, menu, __project_save_cb);
+		} else if (!strcmp (menu, "Close Project")) {
+			__add_menu (core, parent, menu, __project_close_cb);
+		} else if (!strcmp (menu, "Quit")) {
+			__add_menu (core, parent, menu, __quit_cb);
+		} else if (*menu == '-') {
+			__add_menu (core, parent, menu, __separator);
 		} else {
-			__add_menu (core, parent, menus_File[i], __add_cmd_panel);
+			__add_menu (core, parent, menu, __add_cmd_panel);
 		}
 	}
 
 	parent = "Settings";
 	for (i = 0; menus_Settings[i]; i++) {
-		__add_menu (core, parent, menus_Settings[i], __open_menu_cb);
+		const char *menu = menus_Settings[i];
+		if (!strcmp (menu, "Edit radare2rc")) {
+			__add_menu (core, parent, menu, __r2rc_cb);
+		} else if (!strcmp (menu, "Save Layout")) {
+			__add_menu (core, parent, menu, __save_layout_cb);
+		} else if (!strcmp (menu, "Load Layout")) {
+			__add_menu (core, parent, menu, __open_menu_cb);
+		} else if (!strcmp (menu, "Clear Saved Layouts")) {
+			__add_menu (core, parent, menu, __clear_layout_cb);
+		} else if (*menu) {
+			__add_menu (core, parent, menu, __open_menu_cb);
+		}
 	}
 
 	parent = "Edit";
 	for (i = 0; menus_Edit[i]; i++) {
-		if (!strcmp (menus_Edit[i], "Copy")) {
-			__add_menu (core, parent, menus_Edit[i], __copy_cb);
-		} else if (!strcmp (menus_Edit[i], "Paste")) {
-			__add_menu (core, parent, menus_Edit[i], __paste_cb);
-		} else if (!strcmp (menus_Edit[i], "Write String")) {
-			__add_menu (core, parent, menus_Edit[i], __write_str_cb);
-		} else if (!strcmp (menus_Edit[i], "Write Hex")) {
-			__add_menu (core, parent, menus_Edit[i], __write_hex_cb);
-		} else if (!strcmp (menus_Edit[i], "Write Value")) {
-			__add_menu (core, parent, menus_Edit[i], __writeValueCb);
-		} else if (!strcmp (menus_Edit[i], "Assemble")) {
-			__add_menu (core, parent, menus_Edit[i], __assemble_cb);
-		} else if (!strcmp (menus_Edit[i], "Fill")) {
-			__add_menu (core, parent, menus_Edit[i], __fill_cb);
-		} else if (!strcmp (menus_Edit[i], "io.cache")) {
-			__add_menu (core, parent, menus_Edit[i], __open_menu_cb);
+		const char *menu = menus_Edit[i];
+		if (!strcmp (menu, "Copy")) {
+			__add_menu (core, parent, menu, __copy_cb);
+		} else if (!strcmp (menu, "Paste")) {
+			__add_menu (core, parent, menu, __paste_cb);
+		} else if (!strcmp (menu, "Write String")) {
+			__add_menu (core, parent, menu, __write_str_cb);
+		} else if (!strcmp (menu, "Write Hex")) {
+			__add_menu (core, parent, menu, __write_hex_cb);
+		} else if (!strcmp (menu, "Write Value")) {
+			__add_menu (core, parent, menu, __writeValueCb);
+		} else if (!strcmp (menu, "Assemble")) {
+			__add_menu (core, parent, menu, __assemble_cb);
+		} else if (!strcmp (menu, "Fill")) {
+			__add_menu (core, parent, menu, __fill_cb);
+		} else if (!strcmp (menu, "io.cache")) {
+			__add_menu (core, parent, menu, __open_menu_cb);
+		} else if (*menu == '-') {
+			__add_menu (core, parent, menu, __separator);
 		} else {
-			__add_menu (core, parent, menus_Edit[i], __add_cmd_panel);
+			__add_menu (core, parent, menu, __add_cmd_panel);
 		}
 	}
 
@@ -5785,40 +5935,43 @@ static bool __init_panels_menu(RCore *core) {
 
 	parent = "Tools";
 	for (i = 0; menus_Tools[i]; i++) {
-		if (!strcmp (menus_Tools[i], "Calculator")) {
-			__add_menu (core, parent, menus_Tools[i], __calculator_cb);
-		} else if (!strcmp (menus_Tools[i], "Assembler")) {
-			__add_menu (core, parent, menus_Tools[i], __r2_assembler_cb);
-		} else if (!strcmp (menus_Tools[i], "R2 Shell")) {
-			__add_menu (core, parent, menus_Tools[i], __r2_shell_cb);
-		} else if (!strcmp (menus_Tools[i], "System Shell")) {
-			__add_menu (core, parent, menus_Tools[i], __system_shell_cb);
+		const char *menu = menus_Tools[i];
+		if (!strcmp (menu, "Calculator")) {
+			__add_menu (core, parent, menu, __calculator_cb);
+		} else if (!strcmp (menu, "Assembler")) {
+			__add_menu (core, parent, menu, __r2_assembler_cb);
+		} else if (!strcmp (menu, "R2 Shell")) {
+			__add_menu (core, parent, menu, __r2_shell_cb);
+		} else if (!strcmp (menu, "System Shell")) {
+			__add_menu (core, parent, menu, __system_shell_cb);
 		}
 	}
 
 	parent = "Search";
 	for (i = 0; menus_Search[i]; i++) {
-		if (!strcmp (menus_Search[i], "String (Whole Bin)")) {
-			__add_menu (core, parent, menus_Search[i], __string_whole_bin_cb);
-		} else if (!strcmp (menus_Search[i], "String (Data Sections)")) {
-			__add_menu (core, parent, menus_Search[i], __string_data_sec_cb);
-		} else if (!strcmp (menus_Search[i], "ROP")) {
-			__add_menu (core, parent, menus_Search[i], __rop_cb);
-		} else if (!strcmp (menus_Search[i], "Code")) {
-			__add_menu (core, parent, menus_Search[i], __code_cb);
-		} else if (!strcmp (menus_Search[i], "Hexpairs")) {
-			__add_menu (core, parent, menus_Search[i], __hexpairs_cb);
+		const char *menu = menus_Search[i];
+		if (!strcmp (menu, "String (Whole Bin)")) {
+			__add_menu (core, parent, menu, __string_whole_bin_cb);
+		} else if (!strcmp (menu, "String (Data Sections)")) {
+			__add_menu (core, parent, menu, __string_data_sec_cb);
+		} else if (!strcmp (menu, "ROP")) {
+			__add_menu (core, parent, menu, __rop_cb);
+		} else if (!strcmp (menu, "Code")) {
+			__add_menu (core, parent, menu, __code_cb);
+		} else if (!strcmp (menu, "Hexpairs")) {
+			__add_menu (core, parent, menu, __hexpairs_cb);
 		}
 	}
 
 	parent = "Emulate";
 	for (i = 0; menus_Emulate[i]; i++) {
-		if (!strcmp (menus_Emulate[i], "Step From")) {
-			__add_menu (core, parent, menus_Emulate[i], __esil_init_cb);
-		} else if (!strcmp (menus_Emulate[i], "Step To")) {
-			__add_menu (core, parent, menus_Emulate[i], __esil_step_to_cb);
-		} else if (!strcmp (menus_Emulate[i], "Step Range")) {
-			__add_menu (core, parent, menus_Emulate[i], __esil_step_range_cb);
+		const char *menu = menus_Emulate[i];
+		if (!strcmp (menu, "Step From")) {
+			__add_menu (core, parent, menu, __esil_init_cb);
+		} else if (!strcmp (menu, "Step To")) {
+			__add_menu (core, parent, menu, __esil_step_to_cb);
+		} else if (!strcmp (menu, "Step Range")) {
+			__add_menu (core, parent, menu, __esil_step_range_cb);
 		}
 	}
 	{
@@ -5847,61 +6000,73 @@ static bool __init_panels_menu(RCore *core) {
 
 	parent = "Analyze";
 	for (i = 0; menus_Analyze[i]; i++) {
-		if (!strcmp (menus_Analyze[i], "Function")) {
-			__add_menu (core, parent, menus_Analyze[i], __function_cb);
-		} else if (!strcmp (menus_Analyze[i], "Symbols")) {
-			__add_menu (core, parent, menus_Analyze[i], __symbols_cb);
-		} else if (!strcmp (menus_Analyze[i], "Program")) {
-			__add_menu (core, parent, menus_Analyze[i], __program_cb);
-		} else if (!strcmp (menus_Analyze[i], "BasicBlocks")) {
-			__add_menu (core, parent, menus_Analyze[i], __basic_blocks_cb);
-		} else if (!strcmp (menus_Analyze[i], "Calls")) {
-			__add_menu (core, parent, menus_Analyze[i], __calls_cb);
-		} else if (!strcmp (menus_Analyze[i], "References")) {
-			__add_menu (core, parent, menus_Analyze[i], __references_cb);
+		const char *menu = menus_Analyze[i];
+		if (!strcmp (menu, "Function")) {
+			__add_menu (core, parent, menu, __function_cb);
+		} else if (!strcmp (menu, "Symbols")) {
+			__add_menu (core, parent, menu, __symbols_cb);
+		} else if (!strcmp (menu, "Program")) {
+			__add_menu (core, parent, menu, __program_cb);
+		} else if (!strcmp (menu, "BasicBlocks")) {
+			__add_menu (core, parent, menu, __basic_blocks_cb);
+		} else if (!strcmp (menu, "Preludes")) {
+			__add_menu (core, parent, menu, __aap_cb);
+		} else if (!strcmp (menu, "Emulation")) {
+			__add_menu (core, parent, menu, __aae_cb);
+		} else if (!strcmp (menu, "Calls")) {
+			__add_menu (core, parent, menu, __calls_cb);
+		} else if (!strcmp (menu, "References")) {
+			__add_menu (core, parent, menu, __references_cb);
 		}
 	}
 	parent = "Help";
 	for (i = 0; menus_Help[i]; i++) {
-		if (!strcmp (menus_Help[i], "License")) {
-			__add_menu (core, parent, menus_Help[i], __license_cb);
-		} else if (!strcmp (menus_Help[i], "Version")) {
-			__add_menu (core, parent, menus_Help[i], __version_cb);
-		} else if (!strcmp (menus_Help[i], "Full Version")) {
-			__add_menu (core, parent, menus_Help[i], __version2_cb);
-		} else if (!strcmp (menus_Help[i], "Fortune")) {
-			__add_menu (core, parent, menus_Help[i], __fortune_cb);
-		} else if (!strcmp (menus_Help[i], "2048")) {
-			__add_menu (core, parent, menus_Help[i], __game_cb);
+		const char *menu = menus_Help[i];
+		if (!strcmp (menu, "License")) {
+			__add_menu (core, parent, menu, __license_cb);
+		} else if (!strcmp (menu, "Version")) {
+			__add_menu (core, parent, menu, __version_cb);
+		} else if (!strcmp (menu, "Full Version")) {
+			__add_menu (core, parent, menu, __version2_cb);
+		} else if (!strcmp (menu, "Fortune")) {
+			__add_menu (core, parent, menu, __fortune_cb);
+		} else if (!strcmp (menu, "2048")) {
+			__add_menu (core, parent, menu, __game_cb);
+		} else if (!strcmp (menu, "Manpages...")) {
+			__add_menu (core, parent, menu, __open_menu_cb);
+		} else if (*menu == '-') {
+			__add_menu (core, parent, menu, __separator);
 		} else {
-			__add_menu (core, parent, menus_Help[i], __help_cb);
+			__add_menu (core, parent, menu, __help_cb);
 		}
 	}
 
 	parent = "File.ReOpen";
 	for (i = 0; menus_ReOpen[i]; i++) {
-		if (!strcmp (menus_ReOpen[i], "In RW")) {
-			__add_menu (core, parent, menus_ReOpen[i], __rw_cb);
-		} else if (!strcmp (menus_ReOpen[i], "In Debugger")) {
-			__add_menu (core, parent, menus_ReOpen[i], __debugger_cb);
+		const char *menu = menus_ReOpen[i];
+		if (!strcmp (menu, "In Read+Write")) {
+			__add_menu (core, parent, menu, __rw_cb);
+		} else if (!strcmp (menu, "In Debugger")) {
+			__add_menu (core, parent, menu, __debugger_cb);
 		}
 	}
 
-	parent = "File.Load Layout";
+	parent = "Settings.Load Layout";
 	for (i = 0; menus_loadLayout[i]; i++) {
-		if (!strcmp (menus_loadLayout[i], "Saved")) {
-			__add_menu (core, parent, menus_loadLayout[i], __open_menu_cb);
-		} else if (!strcmp (menus_loadLayout[i], "Default")) {
-			__add_menu (core, parent, menus_loadLayout[i], __load_layout_default_cb);
+		const char *menu = menus_loadLayout[i];
+		if (!strcmp (menu, "Saved")) {
+			__add_menu (core, parent, menu, __open_menu_cb);
+		} else if (!strcmp (menu, "Default")) {
+			__add_menu (core, parent, menu, __load_layout_default_cb);
 		}
 	}
 
-	__init_menu_saved_layout (core, "File.Load Layout.Saved");
-
-	__init_menu_color_settings_layout (core, "Settings.Colors");
+	__init_menu_saved_layout (core, "Settings.Load Layout.Saved");
+	__init_menu_color_settings_layout (core, "Settings.Color Themes...");
+	__init_menu_manpages (core, "Help.Manpages...");
 
 	{
-		parent = "Settings.Decompiler";
+		parent = "Settings.Decompiler...";
 		char *opts = r_core_cmd_str (core, "e cmd.pdc=?");
 		RList *optl = r_str_split_list (opts, "\n", 0);
 		RListIter *iter;
@@ -5913,8 +6078,8 @@ static bool __init_panels_menu(RCore *core) {
 		free (opts);
 	}
 
-	__init_menu_disasm_settings_layout (core, "Settings.Disassembly");
-	__init_menu_screen_settings_layout (core, "Settings.Screen");
+	__init_menu_disasm_settings_layout (core, "Settings.Disassembly...");
+	__init_menu_screen_settings_layout (core, "Settings.Screen...");
 
 	parent = "Edit.io.cache";
 	for (i = 0; menus_iocache[i]; i++) {
@@ -6019,11 +6184,10 @@ static void __panel_print(RCore *core, RConsCanvas *can, RPanel *panel, bool col
 	} else {
 		__default_panel_print (core, panel);
 	}
-	int w, h;
-	w = R_MIN (panel->view->pos.w, can->w - panel->view->pos.x);
-	h = R_MIN (panel->view->pos.h, can->h - panel->view->pos.y);
+	int w = R_MIN (panel->view->pos.w, can->w - panel->view->pos.x);
+	int h = R_MIN (panel->view->pos.h, can->h - panel->view->pos.y);
 	if (color) {
-		r_cons_canvas_box (can, panel->view->pos.x, panel->view->pos.y, w, h, core->cons->context->pal.graph_box2);
+		r_cons_canvas_box (can, panel->view->pos.x, panel->view->pos.y, w, h, PANEL_HL_COLOR);
 	} else {
 		r_cons_canvas_box (can, panel->view->pos.x, panel->view->pos.y, w, h, core->cons->context->pal.graph_box);
 	}
@@ -6069,17 +6233,25 @@ static void __panels_refresh(RCore *core) {
 	}
 	(void) r_cons_canvas_gotoxy (can, -can->sx, -can->sy);
 	r_cons_canvas_fill (can, -can->sx, -can->sy, w, 1, ' ');
-	const char *color = core->cons->context->pal.graph_box2;
 	if (panels->mode == PANEL_MODE_ZOOM) {
-		r_strbuf_appendf (title, "%s Zoom Mode | Press Enter or q to quit"Color_RESET, color);
+		r_strbuf_appendf (title, "%s Zoom Mode | Press Enter or q to quit"Color_RESET, PANEL_HL_COLOR);
 	} else if (panels->mode == PANEL_MODE_WINDOW) {
-		r_strbuf_appendf (title, "%s Window Mode | hjkl: move around the panels | q: quit the mode | Enter: Zoom mode"Color_RESET, color);
+		r_strbuf_appendf (title, "%s Window Mode | hjkl: move around the panels | q: quit the mode | Enter: Zoom mode"Color_RESET, PANEL_HL_COLOR);
 	} else {
 		RPanelsMenuItem *parent = panels->panels_menu->root;
+		if (panels->mode == PANEL_MODE_MENU) {
+			r_strbuf_append (title, " > ");
+		} else {
+			if (panels->can->color) {
+				r_strbuf_appendf (title, "%s[m]"Color_RESET, PANEL_HL_COLOR);
+			} else {
+				r_strbuf_append (title, "[m]");
+			}
+		}
 		for (i = 0; i < parent->n_sub; i++) {
 			RPanelsMenuItem *item = parent->sub[i];
 			if (panels->mode == PANEL_MODE_MENU && i == parent->selectedIndex) {
-				r_strbuf_appendf (title, "%s[%s]"Color_RESET, color, item->name);
+				r_strbuf_appendf (title, "%s[%s]"Color_RESET, PANEL_HL_COLOR, item->name);
 			} else {
 				r_strbuf_appendf (title, " %s ", item->name);
 			}
@@ -6101,15 +6273,12 @@ static void __panels_refresh(RCore *core) {
 	int tab_pos = i;
 	for (i = core->panels_root->n_panels; i > 0; i--) {
 		RPanels *panels = core->panels_root->panels[i - 1];
-		char *name = NULL;
-		if (panels) {
-			name = panels->name;
-		}
+		const char *name = panels? panels->name: NULL;
 		if (i - 1 == core->panels_root->cur_panels) {
-			if (!name) {
-				r_strbuf_setf (title, "%s[%d] "Color_RESET, color, i);
+			if (name) {
+				r_strbuf_setf (title, "%s(%s) "Color_RESET, PANEL_HL_COLOR, name);
 			} else {
-				r_strbuf_setf (title, "%s[%s] "Color_RESET, color, name);
+				r_strbuf_setf (title, "%s(%d) "Color_RESET, PANEL_HL_COLOR, i);
 			}
 			tab_pos -= r_str_ansi_len (r_strbuf_get (title));
 		} else {
@@ -6123,8 +6292,8 @@ static void __panels_refresh(RCore *core) {
 		(void) r_cons_canvas_gotoxy (can, tab_pos, -can->sy);
 		r_cons_canvas_write (can, r_strbuf_get (title));
 	}
-	r_strbuf_set (title, "Tab ");
-	tab_pos -= r_strbuf_length (title);
+	r_strbuf_setf (title, "%s[t]%sab ", PANEL_HL_COLOR, Color_RESET);
+	tab_pos -= r_str_ansi_len (r_strbuf_get (title));
 	(void) r_cons_canvas_gotoxy (can, tab_pos, -can->sy);
 	r_cons_canvas_write (can, r_strbuf_get (title));
 	r_strbuf_free (title);
@@ -6372,7 +6541,7 @@ R_API void r_core_panels_save(RCore *core, const char *oname) {
 	}
 	char *config_path = __create_panels_config_path (name);
 	RPanels *panels = core->panels;
-	PJ *pj = pj_new ();
+	PJ *pj = r_core_pj_new (core);
 	for (i = 0; i < panels->n_panels; i++) {
 		RPanel *panel = __get_panel (panels, i);
 		pj_o (pj);
@@ -6390,7 +6559,7 @@ R_API void r_core_panels_save(RCore *core, const char *oname) {
 		fprintf (fd, "%s\n", pjs);
 		free (pjs);
 		fclose (fd);
-		__update_menu (core, "File.Load Layout.Saved", __init_menu_saved_layout);
+		__update_menu (core, "Settings.Load Layout.Saved", __init_menu_saved_layout);
 		(void)__show_status (core, "Panels layout saved!");
 	} else {
 		pj_free (pj);
@@ -6402,7 +6571,7 @@ static char *__parse_panels_config(const char *cfg, int len) {
 	if (R_STR_ISEMPTY (cfg) || len < 2) {
 		return NULL;
 	}
-	char *tmp = r_str_newlen (cfg, len + 1);
+	char *tmp = R_STR_NDUP (cfg, len + 1);
 	if (!tmp) {
 		return NULL;
 	}
@@ -6475,8 +6644,10 @@ R_API bool r_core_panels_load(RCore *core, const char *_name) {
 				return false;
 			}
 			char *drained_string = r_strbuf_drain (rsb);
-			__set_read_only (core, p, drained_string);
-			free (drained_string);
+			if (drained_string) {
+				__set_read_only (core, p, drained_string);
+				free (drained_string);
+			}
 		}
 		tmp_cfg += strlen (tmp_cfg) + 1;
 	}
@@ -6555,41 +6726,40 @@ static void __redo_seek(RCore *core) {
 static void __handle_tab(RCore *core) {
 	r_cons_gotoxy (0, 0);
 	if (core->panels_root->n_panels <= 1) {
-		r_cons_printf (R_CONS_CLEAR_LINE"%s[Tab] t:new T:new with current panel -:del =:name"Color_RESET, core->cons->context->pal.graph_box2);
+		r_cons_printf (R_CONS_CLEAR_LINE"%stab: q:quit t:new T:newWithCurPanel -:del =:setName"Color_RESET, PANEL_HL_COLOR);
 	} else {
 		const int min = 1;
 		const int max = core->panels_root->n_panels;
-		r_cons_printf (R_CONS_CLEAR_LINE"%s[Tab] [%d..%d]:select; p:prev; n:next; t:new T:new with current panel -:del =:name"Color_RESET,
-			core->cons->context->pal.graph_box2, min, max);
+		r_cons_printf (R_CONS_CLEAR_LINE"%stab: q:quit [%d..%d]:select; p:prev; n:next; t:new T:newWithCurPanel -:del =:setName"Color_RESET,
+				PANEL_HL_COLOR, min, max);
 	}
 	r_cons_flush ();
 	r_cons_set_raw (true);
-	int ch = r_cons_readchar ();
+	const int ch = r_cons_readchar ();
 
 	if (isdigit (ch)) {
 		__handle_tab_nth (core, ch);
-		return;
-	}
-
-	switch (ch) {
-	case 'n':
-		__handle_tab_next (core);
-		return;
-	case 'p':
-		__handle_tab_prev (core);
-		return;
-	case '-':
-		__set_root_state (core, DEL);
-		return;
-	case '=':
-		__handle_tab_name (core);
-		return;
-	case 't':
-		__handle_tab_new (core);
-		return;
-	case 'T':
-		__handle_tab_new_with_cur_panel (core);
-		return;
+	} else {
+		switch (ch) {
+		case 'n':
+			__handle_tab_next (core);
+			break;
+		case 'p':
+			__handle_tab_prev (core);
+			break;
+		case '-':
+			__set_root_state (core, DEL);
+			break;
+		case '=':
+			__handle_tab_name (core);
+			break;
+		case 't':
+			__handle_tab_new (core);
+			break;
+		case 'T':
+			__handle_tab_new_with_cur_panel (core);
+			break;
+		}
 	}
 }
 
@@ -7398,10 +7568,10 @@ R_API bool r_core_panels_root(RCore *core, RPanelsRoot *panels_root) {
 		}
 		const char *pdc_now = r_config_get (core->config, "cmd.pdc");
 		if (sdb_exists (panels_root->pdc_caches, pdc_now)) {
-			panels_root->cur_pdc_cache = sdb_ptr_get (panels_root->pdc_caches, r_str_new (pdc_now), 0);
+			panels_root->cur_pdc_cache = sdb_ptr_get (panels_root->pdc_caches, R_STR_DUP (pdc_now), 0);
 		} else {
 			Sdb *sdb = sdb_new0();
-			sdb_ptr_set (panels_root->pdc_caches, r_str_new (pdc_now), sdb, 0);
+			sdb_ptr_set (panels_root->pdc_caches, R_STR_DUP (pdc_now), sdb, 0);
 			panels_root->cur_pdc_cache = sdb;
 		}
 	}

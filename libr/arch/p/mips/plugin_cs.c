@@ -811,7 +811,7 @@ typedef struct plugin_data_t {
 
 
 static bool init(RArchSession *as) {
-	r_return_val_if_fail (as, false);
+	R_RETURN_VAL_IF_FAIL (as, false);
 
 	if (as->data) {
 		R_LOG_WARN ("Already initialized");
@@ -837,7 +837,7 @@ static bool init(RArchSession *as) {
 }
 
 static bool fini(RArchSession *as) {
-	r_return_val_if_fail (as, false);
+	R_RETURN_VAL_IF_FAIL (as, false);
 	PluginData *pd = as->data;
 	R_FREE (pd->cpu);
 	cs_close (&pd->cpd.cs_handle);
@@ -846,7 +846,7 @@ static bool fini(RArchSession *as) {
 }
 
 static csh cs_handle_for_session(RArchSession *as) {
-	r_return_val_if_fail (as && as->data, 0);
+	R_RETURN_VAL_IF_FAIL (as && as->data, 0);
 	CapstonePluginData *pd = as->data;
 	return pd->cs_handle;
 }
@@ -949,10 +949,20 @@ static bool decode(RArchSession *as, RAnalOp *op, RAnalOpMask mask) {
 		case MIPS_OP_MEM:
 			if (OPERAND(1).mem.base == MIPS_REG_GP) {
 				op->ptr = as->config->gp + OPERAND(1).mem.disp;
-				if (REGID(0) == MIPS_REG_T9) {
+#if 0
+				if (REGID (0) == MIPS_REG_T9) {
 					pd->t9_pre = op->ptr;
+					// read pointer again
+					ut32 na = 0;
+					RBin *bin = as->arch->binb.bin;
+					if (bin && bin->iob.read_at (bin->iob.io, op->ptr, &na, sizeof (na))) {
+						pd->t9_pre = na; // UT64_MAX;
+					}
+
+					// eprintf ("SET PRE9 0x%llx\n", op->ptr);
 				}
-			} else if (REGID(0) == MIPS_REG_T9) {
+#endif
+			} else if (REGID (0) == MIPS_REG_T9) {
 				pd->t9_pre = UT64_MAX;
 			}
 			break;
@@ -990,10 +1000,10 @@ static bool decode(RArchSession *as, RAnalOp *op, RAnalOpMask mask) {
 	case MIPS_INS_JALR:
 		op->type = R_ANAL_OP_TYPE_UCALL;
 		op->delay = 1;
-		if (REGID(0) == MIPS_REG_25) {
+		if (REGID (0) == MIPS_REG_25) {
+			op->type = R_ANAL_OP_TYPE_RCALL;
 			op->jump = pd->t9_pre;
 			pd->t9_pre = UT64_MAX;
-			op->type = R_ANAL_OP_TYPE_RCALL;
 		}
 		break;
 	case MIPS_INS_JAL:
@@ -1184,11 +1194,10 @@ static bool decode(RArchSession *as, RAnalOp *op, RAnalOpMask mask) {
 			op->type = R_ANAL_OP_TYPE_RET;
 			pd->t9_pre = UT64_MAX;
 		}
-		if (REGID(0) == MIPS_REG_25) {
-				op->jump = pd->t9_pre;
-				pd->t9_pre = UT64_MAX;
+		if (REGID (0) == MIPS_REG_25) {
+			op->jump = pd->t9_pre;
+			pd->t9_pre = UT64_MAX;
 		}
-
 		break;
 	case MIPS_INS_SLT:
 	case MIPS_INS_SLTI:
@@ -1350,7 +1359,7 @@ static int archinfo(RArchSession *as, ut32 q) {
 }
 
 static char *mnemonics(RArchSession *as, int id, bool json) {
-	r_return_val_if_fail (as && as->data, NULL);
+	R_RETURN_VAL_IF_FAIL (as && as->data, NULL);
 	CapstonePluginData *cpd = as->data;
 	return r_arch_cs_mnemonics (as, cpd->cs_handle, id, json);
 }

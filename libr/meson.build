@@ -21,6 +21,12 @@ parse_plugins = [ 'att2intel' ]
 if get_option('nogpl')
   user_plugins += ['nogrub']
 endif
+if get_option('use_libsqsh')
+  libsqsh_dep = dependency('libsqsh', version: '>=1.4.0', required: false)
+  if libsqsh_dep.found()
+  fs_plugins += ['squashfs']
+endif
+endif
 
 # This must be splitted in meson.builds for each module
 # meson split is results in 1 empty element when splitting an empty string :facepalm:
@@ -294,6 +300,7 @@ if get_option('plugins') == ''
     'blowfish',
     'cps2',
     'des',
+    'ed25519',
     'rc2',
     'rc4',
     'rc6',
@@ -353,6 +360,7 @@ if get_option('plugins') == ''
     'sparse',
     'socket',
     'tcpslurp',
+    'uf2',
     'winkd',
     'winedbg',
     'zip'
@@ -473,6 +481,7 @@ r_util_files = [
   'include/r_util/r_asn1.h',
   'include/r_util/r_assert.h',
   'include/r_util/r_axml.h',
+  'include/r_util/r_base32.h',
   'include/r_util/r_base36.h',
   'include/r_util/r_base64.h',
   'include/r_util/r_base91.h',
@@ -534,6 +543,7 @@ install_headers(r_util_files, install_dir: join_paths(r2_incdir, 'r_util'))
 r_crypto_files = [
   'include/r_crypto/r_aes.h',
   'include/r_crypto/r_des.h',
+  'include/r_crypto/r_ed25519.h',
   'include/r_crypto/r_sm4.h'
 ]
 install_headers(r_crypto_files, install_dir: join_paths(r2_incdir, 'r_crypto'))

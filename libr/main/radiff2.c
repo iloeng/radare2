@@ -103,9 +103,10 @@ static RCore *opencore(RadiffOptions *ro, const char *f) {
 		if (ro->anal_all) {
 			const char *cmd = "aac";
 			switch (ro->anal_all) {
-			case 1: cmd = "aaa"; break;
-			case 2: cmd = "aaaa"; break;
-			case 3: cmd = "aaaaa"; break;
+			case 1: cmd = "aa"; break;
+			case 2: cmd = "aaa"; break;
+			case 3: cmd = "aaaa"; break;
+			case 4: cmd = "aaaaa"; break;
 			}
 			r_core_cmd0 (c, cmd);
 		}
@@ -456,7 +457,7 @@ static int show_help(int v) {
 			"  -p         use physical addressing (io.va=false) (only for radiff2 -AC)\n"
 			"  -q         quiet mode (disable colors, reduce output)\n"
 			"  -r         output in radare commands\n"
-			"  -s         compute edit distance (no substitution, Eugene W. Myers' O(ND) diff algorithm)\n"
+			"  -s         compute edit distance (no substitution, Eugene W. Myers O(ND) diff algorithm)\n"
 			"  -ss        compute Levenshtein edit distance (substitution is allowed, O(N^2))\n"
 			"  -S [name]  sort code diff (name, namelen, addr, size, type, dist) (only for -C or -g)\n"
 			"  -t [0-100] set threshold for code diff (default is 70%%)\n"
@@ -779,7 +780,7 @@ static ut8 *get_classes(RCore *c, int *len) {
 }
 
 static ut8 *get_fields(RCore *c, int *len) {
-	r_return_val_if_fail (c, NULL);
+	R_RETURN_VAL_IF_FAIL (c, NULL);
 	const int pref = r_config_get_b (c->config, "asm.demangle")? 'd': 0;
 
 	if (!len) {
@@ -937,7 +938,7 @@ static char *get_graph_commands(RCore *c, ut64 off) {
 }
 
 static void __generate_graph(RCore *c, ut64 off) {
-	r_return_if_fail (c);
+	R_RETURN_IF_FAIL (c);
 	char *ptr = get_graph_commands (c, off);
 	char *str = ptr;
 	r_cons_break_push (NULL, NULL);
@@ -1287,11 +1288,27 @@ R_API int r_main_radiff2(int argc, const char **argv) {
 		r_config_set_i (c2->config, "diff.bare", ro.showbare);
 		r_anal_diff_setup_i (c->anal, ro.diffops, ro.threshold, ro.threshold);
 		r_anal_diff_setup_i (c2->anal, ro.diffops, ro.threshold, ro.threshold);
-		if (ro.pdc) {
-			if (!addr) {
-				//addr = "entry0";
-				addr = "main";
+		if (addr) {
+			bool err = false;
+			if (r_num_math (c->num, addr) == 0) {
+				err = true;
+			} else if (r_num_math (c2->num, addr) == 0) {
+				err = true;
 			}
+			if (err) {
+				R_LOG_ERROR ("Unknown symbol name '%s'", addr);
+				return -1;
+			}
+		} else {
+			if (r_num_math (c->num, "main")) {
+				addr = "main";
+			} else if (r_num_math (c->num, "entry0")) {
+				addr = "entry0";
+			} else {
+				R_LOG_WARN ("Cannot find entrypoint");
+			}
+		}
+		if (ro.pdc) {
 			/* should be in mode not in bool pdc */
 			r_config_set_i (c->config, "scr.color", COLOR_MODE_DISABLED);
 			r_config_set_i (c2->config, "scr.color", COLOR_MODE_DISABLED);

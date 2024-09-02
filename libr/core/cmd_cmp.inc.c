@@ -60,7 +60,7 @@ static RCoreHelpMessage help_msg_cu = {
 	"cu8", " $$+1 > p", "compare qwords from current seek and +1",
 	"cud", " $$+1 > p", "compare disasm current seek and +1",
 	"wu", " p", "apply unified hex patch (see output of cu)",
-	"curl", " [http-url]", "",
+	"curl", " ([-D data]) [http-url]", "",
 	NULL
 };
 
@@ -96,7 +96,7 @@ R_API R_BORROW RCoreCmpWatcher *r_core_cmpwatch_get(RCore *core, ut64 addr) {
 R_API bool r_core_cmpwatch_add(RCore *core, ut64 addr, int size, const char *cmd) {
 	RCoreCmpWatcher *cmpw;
 	bool found = false;
-	r_return_val_if_fail (core && cmd && size > 0, false);
+	R_RETURN_VAL_IF_FAIL (core && cmd && size > 0, false);
 
 	cmpw = r_core_cmpwatch_get (core, addr);
 	if (!cmpw) {
@@ -112,7 +112,7 @@ R_API bool r_core_cmpwatch_add(RCore *core, ut64 addr, int size, const char *cmd
 		found = true;
 	}
 	cmpw->size = size;
-	cmpw->cmd = r_str_new (cmd);
+	cmpw->cmd = strdup (cmd);
 	if (!cmpw->cmd) {
 		free (cmpw);
 		return false;
@@ -226,7 +226,7 @@ R_API bool r_core_cmpwatch_show(RCore *core, ut64 addr, int mode) {
 }
 
 static bool update_watcher(RIO *io, RCoreCmpWatcher *w) {
-	r_return_val_if_fail (io && w, false);
+	R_RETURN_VAL_IF_FAIL (io && w, false);
 
 	free (w->odata);
 	w->odata = w->ndata;
@@ -262,7 +262,7 @@ R_API bool r_core_cmpwatch_update(RCore *core, ut64 addr) {
 }
 
 static bool revert_watcher(RCoreCmpWatcher *w) {
-	r_return_val_if_fail (w, false);
+	R_RETURN_VAL_IF_FAIL (w, false);
 	if (w->odata) {
 		free (w->ndata);
 		w->ndata = w->odata;
@@ -392,7 +392,7 @@ static int radare_compare(RCore *core, const ut8 *f, const ut8 *d, int len, int 
 		return 0;
 	}
 	if (mode == 'j') {
-		pj = pj_new ();
+		pj = r_core_pj_new (core);
 		if (!pj) {
 			return -1;
 		}
@@ -1079,12 +1079,31 @@ static void cmd_curl(RCore *core, const char *arg) {
 	if (r_sys_getenv_asbool ("R2_CURL")) {
 		r_sys_cmdf ("curl %s", arg);
 	} else {
+		char *postdata = NULL;
+		arg = r_str_trim_head_ro (arg);
+		if (r_str_startswith (arg, "-D")) {
+			if (arg[2] == ' ') {
+				arg = r_str_trim_head_ro (arg + 2);
+				const char *space = strchr (arg, ' ');
+				if (space) {
+					postdata = r_str_ndup (arg, space - arg);
+					arg = space + 1;
+				}
+			}
+			if (!postdata) {
+				r_core_cmd_help_match (core, help_msg_cu, "curl");
+				return;
+			}
+		}
 		if (r_str_startswith (arg, "http://") || r_str_startswith (arg, "https://")) {
 			int len;
-			char *s = r_socket_http_get (arg, NULL, &len);
+			char *s = postdata
+				? r_socket_http_post (arg, postdata, NULL, &len)
+				: r_socket_http_get (arg, NULL, &len);
 			if (s) {
 				r_cons_write (s, len);
 				free (s);
+				r_cons_newline ();
 			}
 		} else {
 			r_core_cmd_help_match (core, help_msg_cu, "curl");

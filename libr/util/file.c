@@ -34,7 +34,7 @@
 #define BS 1024
 
 static int file_stat(const char *file, struct stat* const pStat) {
-	r_return_val_if_fail (file && pStat, -1);
+	R_RETURN_VAL_IF_FAIL (file && pStat, -1);
 #if R2__WINDOWS__
 	wchar_t *wfile = r_utf8_to_utf16 (file);
 	if (!wfile) {
@@ -82,7 +82,7 @@ R_API char *r_file_new(const char *root, ...) {
 }
 
 R_API bool r_file_truncate(const char *filename, ut64 newsize) {
-	r_return_val_if_fail (filename, false);
+	R_RETURN_VAL_IF_FAIL (filename, false);
 	if (r_file_is_directory (filename)) {
 		return false;
 	}
@@ -113,7 +113,7 @@ Example:
 	// str == user32.dll
 */
 R_API const char *r_file_basename(const char *path) {
-	r_return_val_if_fail (path, NULL);
+	R_RETURN_VAL_IF_FAIL (path, NULL);
 	const char *ptr = r_str_rchr (path, NULL, '/');
 	if (ptr) {
 		path = ptr + 1;
@@ -132,7 +132,7 @@ Example:
 	free (str);
 */
 R_API char *r_file_dirname(const char *path) {
-	r_return_val_if_fail (path, NULL);
+	R_RETURN_VAL_IF_FAIL (path, NULL);
 	char *newpath = strdup (path);
 	char *ptr = (char*)r_str_rchr (newpath, NULL, '/');
 	if (ptr) {
@@ -147,7 +147,7 @@ R_API char *r_file_dirname(const char *path) {
 }
 
 R_API bool r_file_is_c(const char *file) {
-	r_return_val_if_fail (file, false);
+	R_RETURN_VAL_IF_FAIL (file, false);
 	const char *ext = r_str_lchr (file, '.'); // TODO: add api in r_file_extension or r_str_ext for this
 	if (ext) {
 		ext++;
@@ -168,7 +168,7 @@ R_API bool r_file_is_regular(const char *str) {
 
 R_API bool r_file_is_directory(const char *str) {
 	struct stat buf = {0};
-	r_return_val_if_fail (!R_STR_ISEMPTY (str), false);
+	R_RETURN_VAL_IF_FAIL (!R_STR_ISEMPTY (str), false);
 	if (file_stat (str, &buf) == -1) {
 		return false;
 	}
@@ -181,7 +181,7 @@ R_API bool r_file_is_directory(const char *str) {
 }
 
 R_API bool r_file_fexists(const char *fmt, ...) {
-	r_return_val_if_fail (fmt, false);
+	R_RETURN_VAL_IF_FAIL (fmt, false);
 	int ret;
 	char string[BS];
 	va_list ap;
@@ -193,7 +193,7 @@ R_API bool r_file_fexists(const char *fmt, ...) {
 }
 
 R_API bool r_file_exists(const char *str) {
-	r_return_val_if_fail (str, false);
+	R_RETURN_VAL_IF_FAIL (str, false);
 	struct stat buf = {0};
 #if 1
 #if 0
@@ -206,7 +206,7 @@ R_API bool r_file_exists(const char *str) {
 	}
 #else
 	char *absfile = r_file_abspath (str);
-	r_return_val_if_fail (!R_STR_ISEMPTY (str), false);
+	R_RETURN_VAL_IF_FAIL (!R_STR_ISEMPTY (str), false);
 	if (file_stat (absfile, &buf) == -1) {
 		free (absfile);
 		return false;
@@ -217,7 +217,7 @@ R_API bool r_file_exists(const char *str) {
 }
 
 R_API ut64 r_file_size(const char *str) {
-	r_return_val_if_fail (!R_STR_ISEMPTY (str), 0);
+	R_RETURN_VAL_IF_FAIL (!R_STR_ISEMPTY (str), 0);
 	struct stat buf = {0};
 	if (file_stat (str, &buf) != 0) {
 		return 0;
@@ -226,7 +226,7 @@ R_API ut64 r_file_size(const char *str) {
 }
 
 R_API bool r_file_is_abspath(const char *file) {
-	r_return_val_if_fail (!R_STR_ISEMPTY (file), 0);
+	R_RETURN_VAL_IF_FAIL (!R_STR_ISEMPTY (file), 0);
 	return ((*file && file[1] == ':') || *file == '/');
 }
 
@@ -282,7 +282,7 @@ R_API char *r_file_abspath_rel(const char *cwd, const char *file) {
 }
 
 R_API char *r_file_abspath(const char *file) {
-	r_return_val_if_fail (file, NULL);
+	R_RETURN_VAL_IF_FAIL (file, NULL);
 	char *cwd = r_sys_getdir ();
 	if (cwd) {
 		char *ret = r_file_abspath_rel (cwd, file);
@@ -307,7 +307,7 @@ R_API char *r_file_binsh(void) {
 
 // Returns bin location in PATH, NULL if not found
 R_API char *r_file_path(const char *bin) {
-	r_return_val_if_fail (bin, NULL);
+	R_RETURN_VAL_IF_FAIL (bin, NULL);
 	char *file = NULL;
 	char *path = NULL;
 	char *str, *ptr;
@@ -380,27 +380,32 @@ R_API char *r_stdin_readline(int *sz) {
 }
 
 R_API char *r_stdin_slurp(int *sz) {
-#if __wasi__
-#warning r_stdin_slurp not available for wasi
-	return NULL;
-#elif R2__UNIX__ || R2__WINDOWS__
+#if (R2__UNIX__ || R2__WINDOWS__) && !__wasi__
 	int i, ret, newfd;
-	if ((newfd = dup (0)) < 0) {
-		return NULL;
+	char *buf = NULL;
+#if R2__WINDOWS__
+	int stdinfd = _fileno (stdin);
+	int omode = _setmode (stdinfd, _O_BINARY);
+#else
+	int stdinfd = fileno (stdin);
+#endif
+	if ((newfd = dup (stdinfd)) < 0) {
+		goto beach;
 	}
-	char *buf = malloc (BS);
+	buf = malloc (BS);
 	if (!buf) {
 		close (newfd);
-		return NULL;
+		goto beach;
 	}
 	for (i = ret = 0; i >= 0; i += ret) {
-		char *new = realloc (buf, i + BS);
-		if (!new) {
-			free (buf);
-			return NULL;
+		char *nbuf = realloc (buf, i + BS);
+		if (!nbuf) {
+			R_LOG_WARN ("Realloc fail %d", i + BS);
+			R_FREE (buf);
+			goto beach;
 		}
-		buf = new;
-		ret = read (0, buf + i, BS);
+		buf = nbuf;
+		ret = read (stdinfd, buf + i, BS);
 		if (ret < 1) {
 			break;
 		}
@@ -410,7 +415,7 @@ R_API char *r_stdin_slurp(int *sz) {
 		R_FREE (buf);
 	} else {
 		buf[i] = 0;
-		dup2 (newfd, 0);
+		dup2 (newfd, stdinfd);
 		close (newfd);
 	}
 	if (sz) {
@@ -419,6 +424,10 @@ R_API char *r_stdin_slurp(int *sz) {
 	if (!i) {
 		R_FREE (buf);
 	}
+beach:
+#if R2__WINDOWS__
+	_setmode (_fileno (stdin), omode);
+#endif
 	return buf;
 #else
 #warning TODO r_stdin_slurp
@@ -428,7 +437,7 @@ R_API char *r_stdin_slurp(int *sz) {
 
 // returns null terminated buffer with contents of the file
 R_API char *r_file_slurp(const char *str, R_NULLABLE size_t *usz) {
-	r_return_val_if_fail (str, NULL);
+	R_RETURN_VAL_IF_FAIL (str, NULL);
 	if (usz) {
 		*usz = 0;
 	}
@@ -510,7 +519,7 @@ R_API char *r_file_slurp(const char *str, R_NULLABLE size_t *usz) {
 }
 
 R_API ut8 *r_file_gzslurp(const char *str, int *outlen, int origonfail) {
-	r_return_val_if_fail (str, NULL);
+	R_RETURN_VAL_IF_FAIL (str, NULL);
 	if (outlen) {
 		*outlen = 0;
 	}
@@ -533,7 +542,7 @@ R_API ut8 *r_file_gzslurp(const char *str, int *outlen, int origonfail) {
 }
 
 R_API ut8 *r_file_slurp_hexpairs(const char *str, int *usz) {
-	r_return_val_if_fail (str, NULL);
+	R_RETURN_VAL_IF_FAIL (str, NULL);
 	if (usz) {
 		*usz = 0;
 	}
@@ -607,13 +616,13 @@ R_API char *r_file_slurp_range(const char *file, ut64 off, int sz, int *osz) {
 }
 
 R_API char *r_file_slurp_random_line(const char *file) {
-	r_return_val_if_fail (file, NULL);
+	R_RETURN_VAL_IF_FAIL (file, NULL);
 	int i = 0;
 	return r_file_slurp_random_line_count (file, &i);
 }
 
 R_API char *r_file_slurp_random_line_count(const char *file, int *line) {
-	r_return_val_if_fail (file && line, NULL);
+	R_RETURN_VAL_IF_FAIL (file && line, NULL);
 	/* Reservoir Sampling */
 	char *ptr = NULL, *str;
 	size_t i, lines, selection = -1;
@@ -656,7 +665,7 @@ R_API char *r_file_slurp_random_line_count(const char *file, int *line) {
 }
 
 R_API bool r_file_dump_line(const char *file, int line, const char *msg, bool replace) {
-	r_return_val_if_fail (file, false);
+	R_RETURN_VAL_IF_FAIL (file, false);
 	if (!msg || !*msg) {
 		return false;
 	}
@@ -713,7 +722,7 @@ R_API bool r_file_dump_line(const char *file, int line, const char *msg, bool re
 }
 
 R_API char *r_file_slurp_line(const char *file, int line, int context) {
-	r_return_val_if_fail (file, NULL);
+	R_RETURN_VAL_IF_FAIL (file, NULL);
 	int i, lines = 0;
 	size_t sz;
 	char *ptr = NULL, *str = r_file_slurp (file, &sz);
@@ -748,12 +757,16 @@ R_API char *r_file_slurp_line(const char *file, int line, int context) {
 }
 
 R_API char *r_file_slurp_lines_from_bottom(const char *file, int line) {
-	r_return_val_if_fail (file, NULL);
+	R_RETURN_VAL_IF_FAIL (file, NULL);
 	int i, lines = 0;
 	size_t sz;
+	if (line < 1) {
+		return strdup ("");
+	}
 	char *ptr = NULL, *str = r_file_slurp (file, &sz);
 	// TODO: Implement context
 	if (str) {
+		r_str_trim (str);
 		for (i = 0; str[i]; i++) {
 			if (str[i] == '\n') {
 				lines++;
@@ -763,20 +776,21 @@ R_API char *r_file_slurp_lines_from_bottom(const char *file, int line) {
 			return str;	// number of lines requested in more than present, return all
 		}
 		i--;
+		line++;
 		for (; str[i] && line; i--) {
 			if (str[i] == '\n') {
 				line--;
 			}
 		}
 		ptr = str + i;
-		ptr = strdup (ptr);
+		ptr = strdup (ptr + 2);
 		free (str);
 	}
 	return ptr;
 }
 
 R_API char *r_file_slurp_lines(const char *file, int line, int count) {
-	r_return_val_if_fail (file, NULL);
+	R_RETURN_VAL_IF_FAIL (file, NULL);
 	int i, lines = 0;
 	size_t sz;
 	char *ptr = NULL, *str = r_file_slurp (file, &sz);
@@ -815,7 +829,7 @@ R_API char *r_file_slurp_lines(const char *file, int line, int count) {
 }
 
 R_API char *r_file_root(const char *root, const char *path) {
-	r_return_val_if_fail (root && path, NULL);
+	R_RETURN_VAL_IF_FAIL (root && path, NULL);
 	char *ret, *s = r_str_replace (strdup (path), "..", "", 1);
 	// XXX ugly hack
 	while (strstr (s, "..")) {
@@ -873,12 +887,12 @@ R_API bool r_file_hexdump(const char *file, const ut8 *buf, int len, int append)
 }
 
 R_API bool r_file_touch(const char *file) {
-	r_return_val_if_fail (file, false);
+	R_RETURN_VAL_IF_FAIL (file, false);
 	return r_file_dump (file, NULL, 0, true);
 }
 
 R_API bool r_file_dump(const char *file, const ut8 *buf, int len, bool append) {
-	r_return_val_if_fail (!R_STR_ISEMPTY (file), false);
+	R_RETURN_VAL_IF_FAIL (!R_STR_ISEMPTY (file), false);
 	FILE *fd;
 	if (append) {
 		fd = r_sandbox_fopen (file, "ab");
@@ -905,7 +919,7 @@ R_API bool r_file_dump(const char *file, const ut8 *buf, int len, bool append) {
 }
 
 R_API bool r_file_move(const char *src, const char *dst) {
-	r_return_val_if_fail (!R_STR_ISEMPTY (src) && !R_STR_ISEMPTY (dst), false);
+	R_RETURN_VAL_IF_FAIL (!R_STR_ISEMPTY (src) && !R_STR_ISEMPTY (dst), false);
 	if (r_sandbox_enable (0)) {
 		return false;
 	}
@@ -929,7 +943,7 @@ R_API bool r_file_move(const char *src, const char *dst) {
 }
 
 R_API bool r_file_rm(const char *file) {
-	r_return_val_if_fail (!R_STR_ISEMPTY (file), false);
+	R_RETURN_VAL_IF_FAIL (!R_STR_ISEMPTY (file), false);
 	if (r_sandbox_enable (0)) {
 		return false;
 	}
@@ -957,7 +971,7 @@ R_API bool r_file_rm(const char *file) {
 }
 
 R_API char *r_file_readlink(const char *path) {
-	r_return_val_if_fail (!R_STR_ISEMPTY (path), false);
+	R_RETURN_VAL_IF_FAIL (!R_STR_ISEMPTY (path), false);
 	if (!r_sandbox_enable (0)) {
 #if R2__UNIX__
 		int ret;
@@ -1399,7 +1413,7 @@ R_API char *r_file_tmpdir(void) {
 }
 
 R_API bool r_file_copy(const char *src, const char *dst) {
-	r_return_val_if_fail (R_STR_ISNOTEMPTY (src) && R_STR_ISNOTEMPTY (dst), false);
+	R_RETURN_VAL_IF_FAIL (R_STR_ISNOTEMPTY (src) && R_STR_ISNOTEMPTY (dst), false);
 	if (!strcmp (src, dst)) {
 		R_LOG_ERROR ("Cannot copy file '%s' to itself", src);
 		return false;
@@ -1535,11 +1549,11 @@ R_API RList* r_file_glob(const char *_globbed_path, int maxdepth) {
 		if (last_slash) {
 			glob_ptr = last_slash + 1;
 			if (globbed_path[0] == '~') {
-				char *rpath = r_str_newlen (globbed_path + 2, last_slash - globbed_path - 1);
+				char *rpath = R_STR_NDUP (globbed_path + 2, last_slash - globbed_path - 1);
 				path = r_file_home (r_str_get (rpath));
 				free (rpath);
 			} else {
-				path = r_str_newlen (globbed_path, last_slash - globbed_path + 1);
+				path = R_STR_NDUP (globbed_path, last_slash - globbed_path + 1);
 			}
 		} else {
 			glob_ptr = globbed_path;

@@ -93,7 +93,7 @@ static bool plugin_manager_init(QjsPluginManager *pm, RCore *core, JSRuntime *rt
 }
 
 static void plugin_manager_add_core_plugin(QjsPluginManager *pm, const char *name, JSContext *ctx, JSValue func) {
-	r_return_if_fail (pm);
+	R_RETURN_IF_FAIL (pm);
 
 	QjsCorePlugin *cp = RVecCorePlugin_emplace_back (&pm->core_plugins);
 	if (cp) {
@@ -104,7 +104,7 @@ static void plugin_manager_add_core_plugin(QjsPluginManager *pm, const char *nam
 }
 
 static QjsIoPlugin *plugin_manager_add_io_plugin(QjsPluginManager *pm, const char *name, JSContext *ctx, RIOPlugin *iop, JSValue func) {
-	r_return_val_if_fail (pm, NULL);
+	R_RETURN_VAL_IF_FAIL (pm, NULL);
 
 	QjsIoPlugin *cp = RVecIoPlugin_emplace_back (&pm->io_plugins);
 	if (cp) {
@@ -119,7 +119,7 @@ static QjsIoPlugin *plugin_manager_add_io_plugin(QjsPluginManager *pm, const cha
 }
 
 static QjsParsePlugin *plugin_manager_add_parse_plugin(QjsPluginManager *pm, const char *name, JSContext *ctx, RParsePlugin *iop, JSValue func) {
-	r_return_val_if_fail (pm, NULL);
+	R_RETURN_VAL_IF_FAIL (pm, NULL);
 
 	QjsParsePlugin *cp = RVecParsePlugin_emplace_back (&pm->parse_plugins);
 	if (cp) {
@@ -147,25 +147,25 @@ static inline int compare_io_plugin_name(const QjsIoPlugin *cp, const void *data
 }
 
 static QjsParsePlugin *plugin_manager_find_parse_plugin(const QjsPluginManager *pm, const char *name) {
-	r_return_val_if_fail (pm, NULL);
+	R_RETURN_VAL_IF_FAIL (pm, NULL);
 
 	return RVecParsePlugin_find (&pm->parse_plugins, (void*) name, compare_parse_plugin_name);
 }
 
 static QjsCorePlugin *plugin_manager_find_core_plugin(const QjsPluginManager *pm, const char *name) {
-	r_return_val_if_fail (pm, NULL);
+	R_RETURN_VAL_IF_FAIL (pm, NULL);
 
 	return RVecCorePlugin_find (&pm->core_plugins, (void*) name, compare_core_plugin_name);
 }
 
 static QjsIoPlugin *plugin_manager_find_io_plugin(const QjsPluginManager *pm, const char *name) {
-	r_return_val_if_fail (pm, NULL);
+	R_RETURN_VAL_IF_FAIL (pm, NULL);
 
 	return RVecIoPlugin_find (&pm->io_plugins, (void*) name, compare_io_plugin_name);
 }
 
 static bool plugin_manager_remove_parse_plugin(QjsPluginManager *pm, const char *name) {
-	r_return_val_if_fail (pm, false);
+	R_RETURN_VAL_IF_FAIL (pm, false);
 
 	ut64 index = RVecParsePlugin_find_index (&pm->parse_plugins, (void*) name, compare_parse_plugin_name);
 	if (index != UT64_MAX) {
@@ -178,7 +178,7 @@ static bool plugin_manager_remove_parse_plugin(QjsPluginManager *pm, const char 
 }
 
 static bool plugin_manager_remove_core_plugin(QjsPluginManager *pm, const char *name) {
-	r_return_val_if_fail (pm, false);
+	R_RETURN_VAL_IF_FAIL (pm, false);
 
 	ut64 index = RVecCorePlugin_find_index (&pm->core_plugins, (void*) name, compare_core_plugin_name);
 	if (index != UT64_MAX) {
@@ -192,7 +192,7 @@ static bool plugin_manager_remove_core_plugin(QjsPluginManager *pm, const char *
 
 static void plugin_manager_add_arch_plugin(QjsPluginManager *pm, const char *name,
 	const char *arch, JSContext *ctx, JSValue decode_func) {
-	r_return_if_fail (pm);
+	R_RETURN_IF_FAIL (pm);
 
 	QjsArchPlugin *ap = RVecArchPlugin_emplace_back (&pm->arch_plugins);
 	if (ap) {
@@ -210,12 +210,12 @@ static inline int compare_arch_plugin_arch(const QjsArchPlugin *ap, const void *
 }
 
 static QjsArchPlugin *plugin_manager_find_arch_plugin(const QjsPluginManager *pm, const char *arch) {
-	r_return_val_if_fail (pm, NULL);
+	R_RETURN_VAL_IF_FAIL (pm, NULL);
 	return RVecArchPlugin_find (&pm->arch_plugins, (void*) arch, compare_arch_plugin_arch);
 }
 
 static bool plugin_manager_remove_arch_plugin(QjsPluginManager *pm, const char *arch) {
-	r_return_val_if_fail (pm, false);
+	R_RETURN_VAL_IF_FAIL (pm, false);
 
 	ut64 index = RVecArchPlugin_find_index (&pm->arch_plugins, (void*) arch, compare_arch_plugin_arch);
 	if (index != UT64_MAX) {
@@ -229,7 +229,7 @@ static bool plugin_manager_remove_arch_plugin(QjsPluginManager *pm, const char *
 }
 
 static bool plugin_manager_remove_plugin(QjsPluginManager *pm, const char *type, const char *plugin_id) {
-	r_return_val_if_fail (pm, false);
+	R_RETURN_VAL_IF_FAIL (pm, false);
 
 	if (R_STR_ISNOTEMPTY (type)) {
 		if (!strcmp (type, "parse")) {
@@ -420,7 +420,9 @@ static JSValue r2cmd0(JSContext *ctx, JSValueConst this_val, int argc, JSValueCo
 	const char *n = JS_ToCStringLen2 (ctx, &plen, argv[0], false);
 	int ret = 0;
 	if (R_STR_ISNOTEMPTY (n)) {
-		ret = pm->core->lang->cmdf (pm->core, "%s@e:scr.null=true", n);
+		pm->core->lang->cmdf (pm->core, "e scr.null=true");
+		ret = pm->core->lang->cmdf (pm->core, "%s", n);
+		pm->core->lang->cmdf (pm->core, "e scr.null=false");
 	}
 	// JS_FreeValue (ctx, argv[0]);
 	return JS_NewInt32 (ctx, ret);
@@ -738,6 +740,8 @@ static void register_helpers(JSContext *ctx) {
 		"{console.log((typeof x==='string')?x:JSON.stringify(x, null, 2));}"
 		"}");
 	eval (ctx, "var console = { log:print, error:print, debug:print };");
+	eval (ctx, "r2.cmd2 = (x) => JSON.parse(r2.cmd(`'{\"cmd\":\"${x}\"}`));");
+	eval (ctx, "r2.cmd2j = (x) => JSON.parse(r2.cmd(`'{\"cmd\":\"${x}\",\"json\":true}`));");
 	eval (ctx, "r2.cmdj = (x) => JSON.parse(r2.cmd(x));");
 	eval (ctx, "r2.cmdAt = (x, a) => r2.cmd(x + ' @ ' + a);");
 	eval (ctx, "r2.call = (x) => r2.cmd('\"\"' + x);");
@@ -745,13 +749,27 @@ static void register_helpers(JSContext *ctx) {
 	eval (ctx, "var global = globalThis; var G = globalThis;");
 	eval (ctx, js_require_qjs);
 	eval (ctx, "require = function(x) { if (x == 'r2papi') { return new R2Papi(r2); } ; return requirejs(x); }");
-	eval (ctx, "var exports = {};");
+	eval (ctx, "var exports = G;");
 	// eval (ctx, "G.r2pipe = {open: function(){ return R.r2;}};");
 	eval (ctx, "G.R2Pipe=() => R.r2;");
 	if (r_sys_getenv_asbool ("R2_DEBUG_NOPAPI")) {
 		eval (ctx, "R=r2;");
 	} else {
-		eval (ctx, js_r2papi_qjs);
+		char *custom_papi = r_sys_getenv ("R2_PAPI_SCRIPT");
+		if (R_STR_ISNOTEMPTY (custom_papi)) {
+			char *script = r_file_slurp (custom_papi, NULL);
+			if (script) {
+				eval (ctx, script);
+				free (script);
+			} else {
+				R_LOG_ERROR ("Cannot find %s. Loading default r2papi", custom_papi);
+				eval (ctx, js_r2papi_qjs);
+			}
+		} else {
+			eval (ctx, js_r2papi_qjs);
+			// r_file_dump ("rapi.qjs", js_r2papi_qjs, strlen (js_r2papi_qjs), 0);
+		}
+		free (custom_papi);
 		eval (ctx, "R=G.R=new R2Papi(r2);");
 		eval (ctx, "G.Process = new ProcessClass(r2);");
 		eval (ctx, "G.Module = new ModuleClass(r2);");
@@ -805,13 +823,13 @@ static bool eval(JSContext *ctx, const char *code) {
 }
 
 static bool lang_quickjs_run(RLangSession *s, const char *code, int len) {
-	r_return_val_if_fail (s && s->plugin_data && code, false);
+	R_RETURN_VAL_IF_FAIL (s && s->plugin_data && code, false);
 	QjsPluginManager *pm = s->plugin_data;
 	return eval (pm->default_ctx.ctx, code);
 }
 
 static bool lang_quickjs_file(RLangSession *s, const char *file) {
-	r_return_val_if_fail (s && s->plugin_data && file, false);
+	R_RETURN_VAL_IF_FAIL (s && s->plugin_data && file, false);
 
 	QjsPluginManager *pm = s->plugin_data;
 	QjsContext *qctx = &pm->default_ctx;
@@ -879,7 +897,7 @@ static bool init(RLangSession *ls) {
 }
 
 static bool fini(RLangSession *s) {
-	r_return_val_if_fail (s && s->plugin_data, false);
+	R_RETURN_VAL_IF_FAIL (s && s->plugin_data, false);
 
 	QjsPluginManager *pm = s->plugin_data;
 

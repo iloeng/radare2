@@ -76,7 +76,7 @@ static void print_c_instructions(RPrint *p, ut64 addr, const ut8 *buf, int len) 
 }
 
 static void print_c_code(RPrint *p, ut64 addr, const ut8 *buf, int len, int ws, int w, bool headers) {
-	r_return_if_fail (p && p->cb_printf);
+	R_RETURN_IF_FAIL (p && p->cb_printf);
 	size_t i;
 
 	ws = R_MAX (1, R_MIN (ws, 8));
@@ -130,7 +130,7 @@ static void print_c_code(RPrint *p, ut64 addr, const ut8 *buf, int len, int ws, 
 }
 
 R_API void r_print_code(RPrint *p, ut64 addr, const ut8 *buf, int len, char lang) {
-	r_return_if_fail (p && buf);
+	R_RETURN_IF_FAIL (p && buf);
 	int i, w = (int)(p->cols * 0.7);
 	if (w < 1) {
 		w = 1;
@@ -429,9 +429,13 @@ R_API char *r_print_code_tocolor(const char *o) {
 			const char *msg = Color_CYAN"int "Color_RESET;
 			r_strbuf_append (sb, msg);
 			p = w + 4;
+		} else if (r_str_startswith (w, "return;")) {
+			r_strbuf_append_n (sb, p, w - p);
+			r_strbuf_append (sb, Color_CYAN"return;"Color_RESET);
+			p = w + 7;
 		} else if (r_str_startswith (w, "return ")) {
 			r_strbuf_append_n (sb, p, w - p);
-			const char *msg = Color_GREEN "return "Color_RESET;
+			const char *msg = Color_CYAN"return "Color_RESET;
 			r_strbuf_append (sb, msg);
 			p = w + 7;
 		} else if (r_str_startswith (w, "break;")) {

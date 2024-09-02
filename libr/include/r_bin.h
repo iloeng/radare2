@@ -462,6 +462,9 @@ struct r_bin_t {
 	char strfilter; // string filtering
 	char *strpurge; // purge false positive strings
 	char *srcdir; // dir.source
+#if R2_USE_NEW_ABI
+	char *srcdir_base; // dir.source.base
+#endif
 	char *prefix; // bin.prefix
 	char *strenc;
 	ut64 filter_rules;
@@ -580,9 +583,12 @@ typedef struct r_bin_plugin_t {
 	const char* (*get_name)(RBinFile *bf, int type, int idx, bool simplified);
 	ut64 (*get_vaddr)(RBinFile *bf, ut64 baddr, ut64 paddr, ut64 vaddr);
 	RBuffer* (*create)(RBin *bin, const ut8 *code, int codelen, const ut8 *data, int datalen, RBinArchOptions *opt);
-	// TODO: R2_600 RBuffer* (*create)(RBin *bin, RBinCreateOptions *opt);
 	char* (*demangle)(const char *str);
 	char* (*regstate)(RBinFile *bf);
+#if R2_USE_NEW_ABI
+	bool (*cmd)(RBinFile *bf, const char *command);
+	// TODO: R2_600 RBuffer* (*create)(RBin *bin, RBinCreateOptions *opt);
+#endif
 	/* default value if not specified by user */
 	int minstrlen;
 	char strfilter;
@@ -700,12 +706,17 @@ typedef struct r_bin_dbginfo_t {
 	bool (*get_line)(RBinFile *arch, ut64 addr, char *file, int len, int *line, int *column);
 } RBinDbgInfo;
 
+typedef bool (*RBinWriteAddLib)(RBinFile *bf, const char *lib);
+typedef ut64 (*RBinWriteScnResize)(RBinFile *bf, const char *name, ut64 newsize);
+typedef bool (*RBinWriteScnPerms)(RBinFile *bf, const char *name, int perms);
+typedef bool (*RBinWriteEntry)(RBinFile *bf, ut64 addr);
+typedef int (*RBinWriteRpathDel)(RBinFile *bf);
 typedef struct r_bin_write_t {
-	ut64 (*scn_resize)(RBinFile *bf, const char *name, ut64 size); // R2_600 return bool instead
-	bool (*scn_perms)(RBinFile *bf, const char *name, int perms);
-	int (*rpath_del)(RBinFile *bf); // R2_600 return bool instead
-	bool (*entry)(RBinFile *bf, ut64 addr);
-	bool (*addlib)(RBinFile *bf, const char *lib);
+	RBinWriteScnResize scn_resize;
+	RBinWriteScnPerms scn_perms;
+	RBinWriteRpathDel rpath_del;
+	RBinWriteEntry entry;
+	RBinWriteAddLib addlib;
 } RBinWrite;
 
 typedef int (*RBinGetOffset)(RBin *bin, int type, int idx);
@@ -713,6 +724,7 @@ typedef const char *(*RBinGetName)(RBin *bin, int type, int idx, bool sd);
 typedef RList *(*RBinGetSections)(RBin *bin);
 typedef RBinSection *(*RBinGetSectionAt)(RBin *bin, ut64 addr);
 typedef char *(*RBinDemangle)(RBinFile *bf, const char *def, const char *str, ut64 vaddr, bool libs);
+// R2_600 typedef ut64 (*RBinBaddr)(RBinFile *bf, ut64 addr);
 
 typedef struct r_bin_bind_t {
 	RBin *bin;
@@ -721,6 +733,7 @@ typedef struct r_bin_bind_t {
 	RBinGetSections get_sections;
 	RBinGetSectionAt get_vsect_at;
 	RBinDemangle demangle;
+	// RBinBaddr baddr;
 	ut32 visibility;
 } RBinBind;
 
@@ -753,6 +766,9 @@ R_API bool r_bin_open(RBin *bin, const char *file, RBinFileOptions *opt);
 R_API bool r_bin_open_io(RBin *bin, RBinFileOptions *opt);
 R_API bool r_bin_open_buf(RBin *bin, RBuffer *buf, RBinFileOptions *opt);
 R_API bool r_bin_reload(RBin *bin, ut32 bf_id, ut64 baseaddr);
+#if R2_USE_NEW_ABI
+R_API bool r_bin_command(RBin *bin, const char *input);
+#endif
 
 R_API RBinClass *r_bin_class_new(const char *name, const char *super, ut64 attr);
 R_API void r_bin_class_free(RBinClass *);
@@ -901,7 +917,11 @@ R_API void r_bin_name_filtered(RBinName *bn, const char *fname);
 R_API void r_bin_name_free(RBinName *bn);
 
 R_API char *r_bin_attr_tostring(ut64 attr, bool singlechar);
+#if R2_USE_NEW_ABI
+R_API ut64 r_bin_attr_fromstring(const char *s, bool compact);
+#else
 R_API ut64 r_bin_attr_fromstring(const char *s);
+#endif
 
 /* filter.c */
 typedef struct HtSU_t HtSU;
@@ -988,6 +1008,7 @@ extern RBinPlugin r_bin_plugin_lua;
 extern RBinPlugin r_bin_plugin_xtac;
 extern RBinPlugin r_bin_plugin_pdp11;
 extern RBinPlugin r_bin_plugin_pcap;
+extern RBinPlugin r_bin_plugin_uf2;
 extern RBinPlugin r_bin_plugin_io;
 
 #ifdef __cplusplus

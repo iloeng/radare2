@@ -205,7 +205,7 @@ R_API char* r_core_add_asmqjmp(RCore *core, ut64 addr) {
  * multiletter shortcut of the form XYWZu and returned (see r_core_get_asmqjmps
  * for more info). Otherwise, the shortcut is the string representation of pos. */
 R_API void r_core_set_asmqjmps(RCore *core, char *str, size_t len, int pos) {
-	r_return_if_fail (core && str && pos > 0);
+	R_RETURN_IF_FAIL (core && str && pos > 0);
 	if (core->is_asmqjmps_letter) {
 		int i, j = 0;
 		pos --;
@@ -309,7 +309,7 @@ static bool __syncDebugMaps(RCore *core) {
 }
 
 R_API char *r_core_cmd_call_str_at(RCore *core, ut64 addr, const char *cmd) {
-	r_return_val_if_fail (core && core->cons, NULL);
+	R_RETURN_VAL_IF_FAIL (core && core->cons, NULL);
 	r_cons_push ();
 	core->cons->context->noflush = true;
 	core->cons->context->cmd_str_depth++;
@@ -962,7 +962,6 @@ R_API RCore *r_core_new(void) {
 	return c;
 }
 
-/*-----------------------------------*/
 #define radare_argc (sizeof (radare_argv) / sizeof (const char*) - 1)
 #define ms_argc (sizeof (ms_argv) / sizeof (const char*) - 1)
 static const char *ms_argv[] = {
@@ -1076,6 +1075,7 @@ static const char *radare_argv[] = {
 	"ft?", "ft", "ftn", "fV", "fx", "fq",
 	"fz?", "fz", "fz-", "fz.", "fz:", "fz*",
 	"g?", "g", "gw", "gc", "gl?", "gl", "gs", "gi", "gp", "ge", "gr", "gS",
+	"help",
 	"i?", "i", "ij", "iA", "ia", "ib", "ic", "icc", "iC",
 	"id?", "id", "idp", "idpi", "idpi*", "idpd", "iD", "ie", "iee", "iE", "iE.",
 	"ih", "iHH", "ii", "iI", "ik", "il", "iL", "im", "iM", "io", "iO?", "iO",
@@ -1085,7 +1085,7 @@ static const char *radare_argv[] = {
 	"l",
 	"L?", "L", "L-", "Ll", "LL", "La", "Lc", "Ld", "Lh", "Li", "Lo",
 	"m?", "m", "m*", "ml", "m-", "md", "mf?", "mf", "mg", "mo", "mi", "mp", "ms", "my",
-	"o?", "o", "o-", "o--", "o+", "oe", "oa", "oa-", "oq", "oqq", "o*", "o**", "o.", "o=",
+	"o?", "o", "o-", "o--", "o+", "oe", "oa", "oa-", "oq", "oqq", "open", "o*", "o**", "o.", "o=",
 	"ob?", "ob", "ob*", "obo", "oba", "obf", "obj", "obr", "ob-", "ob-*", "obi",
 	"oc", "of", "oi", "oj", "oL", "om", "on",
 	"oo?", "oo", "oo+", "oob", "ood", "oom", "oon", "oon+", "oonn", "oonn+",
@@ -1179,17 +1179,17 @@ static void autocomplete_mount_point(RLineCompletion *completion, RCore *core, c
 }
 
 static void autocomplete_ms_path(RLineCompletion *completion, RCore *core, const char *str, const char *path) {
-	r_return_if_fail (completion && core && str && path);
+	R_RETURN_IF_FAIL (completion && core && str && path);
 	char *dirname = NULL , *basename = NULL;
 	char *pwd = strdup (core->rfs->cwd? (const char *)core->rfs->cwd: ".");
 	int n = 0;
 	RFSFile *file;
-	char *lpath = r_str_new (path);
+	char *lpath = strdup (path);
 	char *p = (char *)r_str_last (lpath, R_SYS_DIR);
 	if (p) {
 		*p = 0;
 		if (p == lpath) { // /xxx
-			dirname  = r_str_new ("/");
+			dirname  = strdup ("/");
 		} else if (lpath[0] == '.') { // ./xxx/yyy
 			dirname = r_str_newf ("%s%s", pwd, R_SYS_DIR);
 		} else if (lpath[0] == '/') { // /xxx/yyy
@@ -1201,14 +1201,14 @@ static void autocomplete_ms_path(RLineCompletion *completion, RCore *core, const
 				dirname = r_file_new (pwd, lpath, NULL);
 			}
 		}
-		basename = r_str_new (p + 1);
+		basename = strdup (p + 1);
 	} else { // xxx
 		if (strlen (pwd) == 1) {
 			dirname = r_str_newf ("%s", R_SYS_DIR);
 		} else {
 			dirname = r_str_newf ("%s%s", pwd, R_SYS_DIR);
 		}
-		basename = r_str_new (lpath);
+		basename = strdup (lpath);
 	}
 	R_FREE (pwd);
 
@@ -1339,7 +1339,7 @@ static void autocomplete_process_path(RLineCompletion *completion, const char *s
 		path++;
 	}
 #endif
-	lpath = r_str_new (path);
+	lpath = strdup (path);
 #if R2__WINDOWS__
 	r_str_replace_ch (lpath, '/', '\\', true);
 #endif
@@ -1350,7 +1350,7 @@ static void autocomplete_process_path(RLineCompletion *completion, const char *s
 #if R2__WINDOWS__
 			dirname = strdup ("\\.\\");
 #else
-			dirname = r_str_new (R_SYS_DIR);
+			dirname = strdup (R_SYS_DIR);
 #endif
 		} else if (lpath[0] == '~' && lpath[1]) { // ~/xxx/yyy
 			dirname = r_file_home (lpath + 2);
@@ -1371,10 +1371,10 @@ static void autocomplete_process_path(RLineCompletion *completion, const char *s
 #endif
 			dirname = r_str_newf (fmt, R_SYS_DIR, lpath, R_SYS_DIR);
 		}
-		basename = r_str_new (p + 1);
+		basename = strdup (p + 1);
 	} else { // xxx
 		dirname = r_str_newf (".%s", R_SYS_DIR);
-		basename = r_str_new (lpath);
+		basename = strdup (lpath);
 	}
 
 	if (!dirname || !basename) {
@@ -1418,7 +1418,7 @@ static void autocomplete_filename(RLineCompletion *completion, RLineBuffer *buf,
 	char *pipe = strchr (buf->data, '>');
 
 	if (pipe) {
-		args = r_str_new (pipe);
+		args = strdup (pipe);
 #if 0
 		if (pipe[1] == ' ') {
 			// currently unreachable
@@ -1426,7 +1426,7 @@ static void autocomplete_filename(RLineCompletion *completion, RLineBuffer *buf,
 		}
 #endif
 	} else {
-		args = r_str_new (buf->data);
+		args = R_STR_DUP (buf->data);
 	}
 
 	if (!args) {
@@ -1438,7 +1438,7 @@ static void autocomplete_filename(RLineCompletion *completion, RLineBuffer *buf,
 		goto out;
 	}
 
-	input = r_str_new (r_str_word_get0 (args, narg));
+	input = R_STR_DUP (r_str_word_get0 (args, narg));
 	if (!input) {
 		goto out;
 	}
@@ -1520,7 +1520,7 @@ static void autocomplete_default(R_NULLABLE RCore *core, RLineCompletion *comple
 }
 
 static void autocomplete_evals(RCore *core, RLineCompletion *completion, const char *str) {
-	r_return_if_fail (str);
+	R_RETURN_IF_FAIL (str);
 	RConfigNode *bt;
 	RListIter *iter;
 	const char *tmp = strrchr (str, ' ');
@@ -1536,7 +1536,7 @@ static void autocomplete_evals(RCore *core, RLineCompletion *completion, const c
 }
 
 static void autocomplete_project(RCore *core, RLineCompletion *completion, const char* str) {
-	r_return_if_fail (str);
+	R_RETURN_IF_FAIL (str);
 	char *foo, *projects_path = r_file_abspath (r_config_get (core->config, "dir.projects"));
 	RList *list = r_sys_dir (projects_path);
 	RListIter *iter;
@@ -1555,7 +1555,7 @@ static void autocomplete_project(RCore *core, RLineCompletion *completion, const
 }
 
 static void autocomplete_minus(RCore *core, RLineCompletion *completion, const char *str) {
-	r_return_if_fail (str);
+	R_RETURN_IF_FAIL (str);
 	int length = strlen (str);
 	int i;
 
@@ -1570,7 +1570,7 @@ static void autocomplete_minus(RCore *core, RLineCompletion *completion, const c
 }
 
 static void autocomplete_breakpoints(RCore *core, RLineCompletion *completion, const char *str) {
-	r_return_if_fail (str);
+	R_RETURN_IF_FAIL (str);
 	RListIter *iter;
 	RBreakpoint *bp = core->dbg->bp;
 	RBreakpointItem *b;
@@ -1591,14 +1591,14 @@ static bool add_argv(RFlagItem *fi, void *user) {
 }
 
 static void autocomplete_flags(RCore *core, RLineCompletion *completion, const char* str) {
-	r_return_if_fail (str);
+	R_RETURN_IF_FAIL (str);
 	int n = strlen (str);
 	r_flag_foreach_prefix (core->flags, str, n, add_argv, completion);
 }
 
 // TODO: Should be refactored
 static void autocomplete_sdb(RCore *core, RLineCompletion *completion, const char *str) {
-	r_return_if_fail (core && completion && str);
+	R_RETURN_IF_FAIL (core && completion && str);
 	char *pipe = strchr (str, '>');
 	Sdb *sdb = core->sdb;
 	char *lpath = NULL, *p1 = NULL, *out = NULL, *p2 = NULL;
@@ -1607,7 +1607,7 @@ static void autocomplete_sdb(RCore *core, RLineCompletion *completion, const cha
 	if (pipe) {
 		str = r_str_trim_head_ro (pipe + 1);
 	}
-	lpath = r_str_new (str);
+	lpath = strdup (str);
 	p1 = strchr (lpath, '/');
 	if (p1) {
 		*p1 = 0;
@@ -1670,7 +1670,7 @@ static void autocomplete_sdb(RCore *core, RLineCompletion *completion, const cha
 }
 
 static void autocomplete_zignatures(RCore *core, RLineCompletion *completion, const char* msg) {
-	r_return_if_fail (msg);
+	R_RETURN_IF_FAIL (msg);
 	int length = strlen (msg);
 	RSpaces *zs = &core->anal->zign_spaces;
 	RSpace *s;
@@ -1688,7 +1688,7 @@ static void autocomplete_zignatures(RCore *core, RLineCompletion *completion, co
 }
 
 static void autocomplete_flagspaces(RCore *core, RLineCompletion *completion, const char* msg) {
-	r_return_if_fail (msg);
+	R_RETURN_IF_FAIL (msg);
 	int length = strlen (msg);
 	RFlag *flag = core->flags;
 	RSpaceIter *it;
@@ -1705,7 +1705,7 @@ static void autocomplete_flagspaces(RCore *core, RLineCompletion *completion, co
 }
 
 static void autocomplete_functions(RCore *core, RLineCompletion *completion, const char* str) {
-	r_return_if_fail (str);
+	R_RETURN_IF_FAIL (str);
 	RListIter *iter;
 	RAnalFunction *fcn;
 	int n = strlen (str);
@@ -1719,7 +1719,7 @@ static void autocomplete_functions(RCore *core, RLineCompletion *completion, con
 }
 
 static void autocomplete_vars(RCore *core, RLineCompletion *completion, const char* str) {
-	r_return_if_fail (str);
+	R_RETURN_IF_FAIL (str);
 	RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, core->offset, 0);
 	if (!fcn) {
 		return;
@@ -1737,7 +1737,7 @@ static void autocomplete_vars(RCore *core, RLineCompletion *completion, const ch
 }
 
 static void autocomplete_macro(RCore *core, RLineCompletion *completion, const char *str) {
-	r_return_if_fail (core && core->rcmd && completion && str);
+	R_RETURN_IF_FAIL (core && core->rcmd && completion && str);
 	RCmdMacroItem *item;
 	RListIter *iter;
 	size_t n = strlen (str);
@@ -1754,7 +1754,7 @@ static void autocomplete_macro(RCore *core, RLineCompletion *completion, const c
 }
 
 static void autocomplete_file(RLineCompletion *completion, const char *str) {
-	r_return_if_fail (completion && str);
+	R_RETURN_IF_FAIL (completion && str);
 	char *pipe = strchr (str, '>');
 	if (pipe) {
 		str = r_str_trim_head_ro (pipe + 1);
@@ -1764,7 +1764,7 @@ static void autocomplete_file(RLineCompletion *completion, const char *str) {
 }
 
 static void autocomplete_ms_file(RCore* core, RLineCompletion *completion, const char *str) {
-	r_return_if_fail (str);
+	R_RETURN_IF_FAIL (str);
 	char *pipe = strchr (str, '>');
 	char *path = strdup ((core->rfs->cwd && *core->rfs->cwd) ? (const char *)core->rfs->cwd: "/");
 	if (pipe) {
@@ -1776,7 +1776,7 @@ static void autocomplete_ms_file(RCore* core, RLineCompletion *completion, const
 }
 
 static void autocomplete_charsets(RCore *core, RLineCompletion *completion, const char *str) {
-	r_return_if_fail (str);
+	R_RETURN_IF_FAIL (str);
 	int len = strlen (str);
 	char *name;
 	RListIter *iter;
@@ -1790,7 +1790,7 @@ static void autocomplete_charsets(RCore *core, RLineCompletion *completion, cons
 }
 
 static void autocomplete_theme(RCore *core, RLineCompletion *completion, const char *str) {
-	r_return_if_fail (str);
+	R_RETURN_IF_FAIL (str);
 	int len = strlen (str);
 	char *theme;
 	RListIter *iter;
@@ -2212,7 +2212,7 @@ static int autocomplete(RLineCompletion *completion, RLineBuffer *buf, RLineProm
 }
 
 R_API int r_core_fgets(char *buf, int len) {
-	r_return_val_if_fail (buf, -1);
+	R_RETURN_VAL_IF_FAIL (buf, -1);
 	RCons *cons = r_cons_singleton ();
 	RLine *rli = cons->line;
 #if R2_590
@@ -2387,7 +2387,7 @@ static char *getvalue(ut64 value, int bits) {
 */
 R_API char *r_core_anal_hasrefs_to_depth(RCore *core, ut64 value, PJ *pj, int depth) {
 	const int bits = core->rasm->config->bits;
-	r_return_val_if_fail (core, NULL);
+	R_RETURN_VAL_IF_FAIL (core, NULL);
 	RStrBuf *s = r_strbuf_new (NULL);
 	if (pj) {
 		pj_o (pj);
@@ -2790,7 +2790,7 @@ static void __init_autocomplete_default(RCore* core) {
 	};
 	const char *files[] = {
 		".", "..", ".*", "/F", "/m", "!", "!!", "#!c", "#!v", "#!cpipe", "#!qjs", "#!tiny", "#!vala", "v.",
-		"#!rust", "#!zig", "#!pipe", "#!python", "aeli", "arp", "arpg", "dmd", "drp", "drpg", "o", "oe", "ot", "o+", "o++", "on",
+		"#!rust", "#!zig", "#!pipe", "#!python", "aeli", "arp", "arpg", "dmd", "drp", "drpg", "oe", "ot", "o+", "o++", "on", "open",
 		"idp", "idpi", "L", "obf", "o+", "o", "oc", "of", "r2", "rabin2", "rasm2", "rahash2", "rax2", "wff",
 		"rafind2", "cd", "ls", "lua", "on", "wf", "rm", "wF", "wp", "Sd", "Sl", "to", "pm",
 		"/m", "zos", "zfd", "zfs", "zfz", "cat", "wta", "wtf", "wxf", "dml", "dd", "dd+",
@@ -2955,7 +2955,7 @@ static RFlagItem *core_flg_fcn_set(RFlag *f, const char *name, ut64 addr, ut32 s
 }
 
 R_API void r_core_autocomplete_reload(RCore *core) {
-	r_return_if_fail (core);
+	R_RETURN_IF_FAIL (core);
 	r_core_autocomplete_free (core->autocomplete);
 	__init_autocomplete (core);
 }
@@ -3171,7 +3171,6 @@ R_API bool r_core_init(RCore *core) {
 	core->times = R_NEW0 (RCoreTimes);
 	core->vmode = false;
 	core_visual_init (&core->visual);
-
 	core->lastcmd = NULL;
 
 	if (core->print->charset) {
@@ -3191,8 +3190,6 @@ R_API bool r_core_init(RCore *core) {
 	// r_anal_bind (core->anal, &(core->egg->rasm->analb));
 
 	core->undos = r_list_newf ((RListFree)r_core_undo_free);
-	core->fixedarch = false;
-	core->fixedbits = false;
 
 	core->theme = strdup ("default");
 	/* initialize libraries */
@@ -3449,6 +3446,7 @@ R_API void r_core_fini(RCore *c) {
 	if (c->anal->esil) {
 		c->anal->esil->anal = NULL;
 	}
+	r_lib_free (c->lib);
 	r_anal_free (c->anal);
 	r_asm_free (c->rasm);
 	c->rasm = NULL;
@@ -3472,7 +3470,6 @@ R_API void r_core_fini(RCore *c) {
 	r_fs_free (c->fs);
 	c->egg->rasm = NULL;
 	r_egg_free (c->egg);
-	r_lib_free (c->lib);
 	r_buf_free (c->yank_buf);
 	r_agraph_free (c->graph);
 	free (c->asmqjmps);
@@ -3490,7 +3487,14 @@ R_API void r_core_free(RCore *c) {
 	}
 }
 
+#if !R2_USE_NEW_ABI
+R_IPI int Gload_index = 0;
+#endif
+
 R_API bool r_core_prompt_loop(RCore *r) {
+#if !R2_USE_NEW_ABI
+	Gload_index = r_cons_singleton()->line->history.index;
+#endif
 	int ret = 0;
 	do {
 		int err = r_core_prompt (r, false);
@@ -3555,6 +3559,10 @@ static void chop_prompt(const char *filename, char *tmp, size_t max_tmp_size) {
 }
 
 static void set_prompt(RCore *r) {
+	if (r->incomment) {
+		r_line_set_prompt (" * ");
+		return;
+	}
 	char tmp[128];
 	char *filename = strdup ("");
 	const char *cmdprompt = r_config_get (r->config, "cmd.prompt");
@@ -3664,6 +3672,10 @@ R_API int r_core_prompt(RCore *r, int sync) {
 		return R_CORE_CMD_EXIT; // ^D
 	}
 	if (ret == -1) {
+		if (r->incomment) {
+			r->incomment = false;
+			return 1;
+		}
 		return false; // FD READ ERROR
 	}
 	r->num->value = rnv;
@@ -3889,7 +3901,7 @@ reaccept:
 						} else {
 							pipefd = -1;
 						}
-						R_LOG_ERROR ("(flags: %d) len: %d filename: '%s'", flg, cmd, ptr);
+						R_LOG_INFO ("(flags: %d) len: %d filename: '%s'", flg, cmd, ptr);
 					} else {
 						pipefd = -1;
 						R_LOG_ERROR ("Cannot open file (%s)", ptr);
@@ -4176,7 +4188,7 @@ R_API char *r_core_editor(const RCore *core, const char *file, const char *str) 
 	}
 	close (fd);
 
-	if (name && (!editor || !*editor || !strcmp (editor, "-"))) {
+	if (name && (R_STR_ISEMPTY (editor) || !strcmp (editor, "-"))) {
 		RCons *cons = r_cons_singleton ();
 		void *tmp = cons->cb_editor;
 		cons->cb_editor = NULL;
@@ -4295,7 +4307,7 @@ R_API RBuffer *r_core_syscall(RCore *core, const char *name, const char *args) {
 }
 
 R_API RCoreAutocomplete *r_core_autocomplete_add(RCoreAutocomplete *parent, const char* cmd, int type, bool lock) {
-	r_return_val_if_fail (parent && cmd, NULL);
+	R_RETURN_VAL_IF_FAIL (parent && cmd, NULL);
 	if (type < 0 || type >= R_CORE_AUTOCMPLT_END) {
 		return NULL;
 	}
@@ -4333,7 +4345,7 @@ R_API void r_core_autocomplete_free(RCoreAutocomplete *obj) {
 }
 
 R_API RCoreAutocomplete *r_core_autocomplete_find(RCoreAutocomplete *parent, const char* cmd, bool exact) {
-	r_return_val_if_fail (parent && cmd, NULL);
+	R_RETURN_VAL_IF_FAIL (parent && cmd, NULL);
 	size_t len = strlen (cmd);
 	int i;
 	for (i = 0; i < parent->n_subcmds; i++) {
@@ -4348,7 +4360,7 @@ R_API RCoreAutocomplete *r_core_autocomplete_find(RCoreAutocomplete *parent, con
 }
 
 R_API bool r_core_autocomplete_remove(RCoreAutocomplete *parent, const char* cmd) {
-	r_return_val_if_fail (parent && cmd, false);
+	R_RETURN_VAL_IF_FAIL (parent && cmd, false);
 	int i, j;
 	for (i = 0; i < parent->n_subcmds; i++) {
 		RCoreAutocomplete *ac = parent->subcmds[i];
@@ -4407,6 +4419,22 @@ R_API PJ *r_core_pj_new(RCore *core) {
 	return pj_new_with_encoding (string_encoding, number_encoding);
 }
 
+static void channel_stop(void *u) {
+	// RCore *core = (RCore *)u;
+	RThreadChannelPromise *promise = (RThreadChannelPromise*)u;
+	promise->tc->responses = NULL;
+	r_th_lock_leave (promise->tc->lock);
+#if 0
+	r_th_lock_free (promise->tc->lock);
+#endif
+	promise->tc->lock = NULL;
+//	r_th_channel_promise_free (promise);
+#if 0
+	r_th_channel_free (core->chan);
+	core->chan = NULL;
+#endif
+}
+
 // reentrant version of RCore.cmd()
 R_API char *r_core_cmd_str_r(RCore *core, const char *cmd) {
 	if (r_str_startswith (cmd, "::")) {
@@ -4417,13 +4445,18 @@ R_API char *r_core_cmd_str_r(RCore *core, const char *cmd) {
 	}
 	RThreadChannelMessage *message = r_th_channel_message_new (core->chan, (const ut8*)cmd, strlen (cmd) + 1);
 	RThreadChannelPromise *promise = r_th_channel_query (core->chan, message);
+	r_cons_break_push (channel_stop, promise);
 	RThreadChannelMessage *response = r_th_channel_promise_wait (promise);
-	char *res = response->msg? strdup ((const char *)response->msg): NULL;
+	char *res = NULL;
+	if (response) {
+		res = response->msg? strdup ((const char *)response->msg): NULL;
+	}
 	// r_cons_printf ("%s", response->msg);
 	r_th_channel_message_free (message);
 	r_th_channel_promise_free (promise);
-	if (message != response) {
+	if (response && message != response) {
 		r_th_channel_message_free (response);
 	}
+	r_cons_break_pop ();
 	return res;
 }

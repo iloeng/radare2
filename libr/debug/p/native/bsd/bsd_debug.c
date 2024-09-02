@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2009-2023 - pancake */
+/* radare - LGPL - Copyright 2009-2024 - pancake */
 
 #include <r_userconf.h>
 
@@ -144,23 +144,23 @@ RDebugInfo *bsd_info(RDebug *dbg, const char *arg) {
 	rdi->exe = strdup (kp->ki_comm);
 
 	switch (kp->ki_stat) {
-		case SSLEEP:
-			rdi->status = R_DBG_PROC_SLEEP;
-			break;
-		case SSTOP:
-			rdi->status = R_DBG_PROC_STOP;
-			break;
-		case SZOMB:
-			rdi->status = R_DBG_PROC_ZOMBIE;
-			break;
-		case SRUN:
-		case SIDL:
-		case SLOCK:
-		case SWAIT:
-			rdi->status = R_DBG_PROC_RUN;
-			break;
-		default:
-			rdi->status = R_DBG_PROC_DEAD;
+	case SSLEEP:
+		rdi->status = R_DBG_PROC_SLEEP;
+		break;
+	case SSTOP:
+		rdi->status = R_DBG_PROC_STOP;
+		break;
+	case SZOMB:
+		rdi->status = R_DBG_PROC_ZOMBIE;
+		break;
+	case SRUN:
+	case SIDL:
+	case SLOCK:
+	case SWAIT:
+		rdi->status = R_DBG_PROC_RUN;
+		break;
+	default:
+		rdi->status = R_DBG_PROC_DEAD;
 	}
 
 	free (kp);
@@ -189,18 +189,20 @@ RDebugInfo *bsd_info(RDebug *dbg, const char *arg) {
 		rdi->gid = kp->p__pgid;
 		rdi->exe = strdup (kp->p_comm);
 
-		rdi->status = R_DBG_PROC_STOP;
-
-		if (kp->p_psflags & PS_ZOMBIE) {
-				rdi->status = R_DBG_PROC_ZOMBIE;
-		} else if (kp->p_psflags & PS_STOPPED) {
+		switch (kp->p_stat) {
+			case SDEAD:
+				rdi->status = R_DBG_PROC_DEAD;
+				break;
+			case SSTOP:
 				rdi->status = R_DBG_PROC_STOP;
-		} else if (kp->p_psflags & PS_PPWAIT) {
+				break;
+			case SSLEEP:
 				rdi->status = R_DBG_PROC_SLEEP;
-		} else if ((kp->p_psflags & PS_EXEC) || (kp->p_psflags & PS_INEXEC)) {
+				break;
+			default:
 				rdi->status = R_DBG_PROC_RUN;
+				break;
 		}
-
 	}
 
 	kvm_close (kd);

@@ -1,4 +1,4 @@
-/* radare2 - LGPL - Copyright 2018-2023 - pancake, mrmacete, keegan */
+/* radare2 - LGPL - Copyright 2018-2024 - pancake, mrmacete, keegan */
 
 #include <r_core.h>
 #include <sdb/ht_su.h>
@@ -107,7 +107,7 @@ static cache_img_t *read_cache_images(RBuffer *cache_buf, cache_hdr_t *hdr, ut64
 }
 
 static void match_bin_entries(RDyldCache *cache, void *entries, ut64 entries_count, bool has_large_entries) {
-	r_return_if_fail (cache && cache->bin_by_pa && entries);
+	R_RETURN_IF_FAIL (cache && cache->bin_by_pa && entries);
 
 	ut32 i;
 	for (i = 0; i < entries_count; i++) {
@@ -130,7 +130,7 @@ static void match_bin_entries(RDyldCache *cache, void *entries, ut64 entries_cou
 }
 
 static RDyldLocSym *r_dyld_locsym_new(RDyldCache *cache) {
-	r_return_val_if_fail (cache && cache->buf, NULL);
+	R_RETURN_VAL_IF_FAIL (cache && cache->buf, NULL);
 
 	ut32 i;
 	for (i = 0; i < cache->n_hdr; i++) {
@@ -468,15 +468,18 @@ static void carve_deps_at_address(RDyldCache *cache, cache_img_t *img, HtSU *pat
 	while (cursor < end) {
 		ut32 cmd = r_read_le32 (cursor);
 		ut32 cmdsize = r_read_le32 (cursor + sizeof (ut32));
+		ut8 *cmd_end = cursor + cmdsize;
 		if (cmd == LC_LOAD_DYLIB ||
 				cmd == LC_LOAD_WEAK_DYLIB ||
 				cmd == LC_REEXPORT_DYLIB ||
 				cmd == LC_LOAD_UPWARD_DYLIB) {
+			ut32 path_offset = r_read_le32 (cursor + 2 * sizeof (ut32));
 			bool found;
-			if (cursor + 24 >= end) {
-				break;
+			if (cursor + path_offset >= cmd_end) {
+				R_LOG_ERROR ("Malformed load command");
+				goto nextcmd;
 			}
-			const char *key = (const char *) cursor + 24;
+			const char *key = (const char *) cursor + path_offset;
 			size_t dep_index = (size_t)ht_su_find (path_to_idx, key, &found);
 			if (!found || dep_index >= cache->hdr->imagesCount) {
 				R_LOG_WARN ("alien dep '%s'", key);
@@ -864,7 +867,7 @@ error:
 }
 
 static void populate_cache_maps(RDyldCache *cache) {
-	r_return_if_fail (cache && cache->buf);
+	R_RETURN_IF_FAIL (cache && cache->buf);
 
 	ut32 i;
 	size_t n_maps = 0;
@@ -1138,12 +1141,28 @@ static bool load(RBinFile *bf, RBuffer *buf, ut64 loadaddr) {
 }
 
 static RList *entries(RBinFile *bf) {
+	RDyldCache *cache = (RDyldCache*) bf->bo->bin_obj;
+	if (!cache) {
+		return NULL;
+	}
+
 	RBinAddr *ptr = NULL;
 	RList *ret = r_list_newf (free);
 	if (!ret) {
 		return NULL;
 	}
 	if ((ptr = R_NEW0 (RBinAddr))) {
+		if (cache->n_maps > 0) {
+			size_t i;
+			for (i = 0; i < cache->n_maps; i++) {
+				cache_map_t * map = &cache->maps[i];
+				if (map->fileOffset == 0) {
+					ptr->paddr = 0;
+					ptr->vaddr = map->address;
+					break;
+				}
+			}
+		}
 		r_list_append (ret, ptr);
 	}
 	return ret;
@@ -1320,6 +1339,39 @@ static RList *sections(RBinFile *bf) {
 		}
 	}
 
+	ut32 j = 0;
+	for (i = 0; i < cache->n_hdr; i++) {
+		cache_hdr_t *hdr = &cache->hdr[i];
+		if (hdr->mappingCount < 1) {
+			continue;
+		}
+		ut32 maps_index = cache->maps_index[i];
+		cache_map_t * first_map = &cache->maps[maps_index];
+
+		bool is_stubs = hdr->imagesCount == 0 &&
+			hdr->mappingCount == 1 &&
+			first_map->size > 0x4000 &&
+			first_map->initProt == 5;
+
+		if (!is_stubs) {
+			continue;
+		}
+
+		if (!(ptr = R_NEW0 (RBinSection))) {
+			r_list_free (ret);
+			break;
+		}
+		ptr->name = r_str_newf ("STUBS_ISLAND.%d", j++);
+		ptr->size = first_map->size - 0x4000;
+		ptr->vsize = ptr->size;
+		ptr->paddr = first_map->fileOffset + 0x4000;
+		ptr->vaddr = first_map->address + 0x4000;
+		ptr->add = true;
+		ptr->is_segment = false;
+		ptr->perm = prot2perm (first_map->initProt);
+		r_list_append (ret, ptr);
+	}
+
 	return ret;
 }
 
@@ -1466,9 +1518,9 @@ static RList *classes(RBinFile *bf) {
 				bf->bo->bin_obj = mach0;
 				bf->buf = cache->buf;
 				if (is_classlist) {
-					MACH0_(get_class_t) (pointer_to_class, bf, klass, false, NULL, cache->oi);
+					MACH0_(get_class_t) (bf, klass, pointer_to_class, false, NULL, cache->oi);
 				} else {
-					MACH0_(get_category_t) (pointer_to_class, bf, klass, NULL, cache->oi);
+					MACH0_(get_category_t) (bf, klass, pointer_to_class, NULL, cache->oi);
 				}
 				bf->bo->bin_obj = cache;
 				bf->buf = orig_buf;
@@ -1483,6 +1535,7 @@ static RList *classes(RBinFile *bf) {
 					free (kname);
 					num_of_unnamed_class++;
 				}
+				klass->index = r_list_length (ret);
 				r_list_append (ret, klass);
 			}
 

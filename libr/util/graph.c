@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2007-2023 - pancake, ret2libc, condret */
+/* radare - LGPL - Copyright 2007-2024 - pancake, ret2libc, condret */
 
 #include <r_util.h>
 
@@ -146,22 +146,19 @@ R_API void r_graph_reset(RGraph *t) {
 		return;
 	}
 	t->nodes->free = (RListFree)r_graph_node_free;
-	t->n_nodes = 0;
+	t->n_nodes = 0; // XXX isnt r_list_length enough?
 	t->n_edges = 0;
 	t->last_index = 0;
 }
 
 R_API RGraphNode *r_graph_add_node(RGraph *t, void *data) {
-	if (!t) {
-		return NULL;
-	}
+	R_RETURN_VAL_IF_FAIL (t && data, NULL);
 	RGraphNode *n = r_graph_node_new (data);
-	if (!n) {
-		return NULL;
+	if (n) {
+		n->idx = t->last_index++;
+		r_list_append (t->nodes, n);
+		t->n_nodes++; /// istn r_list_length enough?
 	}
-	n->idx = t->last_index++;
-	r_list_append (t->nodes, n);
-	t->n_nodes++;
 	return n;
 }
 
@@ -298,7 +295,7 @@ R_API void r_graph_dfs_node_reverse(RGraph *g, RGraphNode *n, RGraphVisitor *vis
 }
 
 R_API void r_graph_dfs(RGraph *g, RGraphVisitor *vis) {
-	r_return_if_fail (g && vis);
+	R_RETURN_IF_FAIL (g && vis);
 	RGraphNode *n;
 	RListIter *it;
 
@@ -378,7 +375,7 @@ static void _dfs_ins_edge(const RGraphEdge *e, RGraphVisitor *vi) {
 }
 
 R_API RGraph *r_graph_dom_tree(RGraph *graph, RGraphNode *root) {
-	r_return_val_if_fail (graph && root, NULL);
+	R_RETURN_VAL_IF_FAIL (graph && root, NULL);
 	RGraph *g = r_graph_new ();
 	if (!g) {
 		return NULL;
@@ -465,7 +462,7 @@ static void _invert_edges (RGraph *g) {
 }
 
 R_API RGraph *r_graph_pdom_tree(RGraph *graph, RGraphNode *root) {
-	r_return_val_if_fail (graph && root, NULL);
+	R_RETURN_VAL_IF_FAIL (graph && root, NULL);
 	_invert_edges (graph);
 	RGraph *g = r_graph_dom_tree (graph, root);
 	_invert_edges (graph);
