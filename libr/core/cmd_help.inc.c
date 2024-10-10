@@ -81,6 +81,7 @@ static RCoreHelpMessage help_msg_at_at = {
 	"x", " @@dbt[abs]", "run 'x' command on every backtrace address, bp or sp",
 	"x", " @@f", "run 'x' on all functions (see aflq)",
 	"x", " @@f:write", "run 'x' on all functions matching write in the name",
+	"x", " @@F", "alias for @@c:afla - inverse recursive function list",
 	"x", " @@i", "run 'x' on all instructions of the current function (see pdr)",
 	"x", " @@iS", "run 'x' on all sections adjusting blocksize",
 	"x", " @@k sdbquery", "run 'x' on all offsets returned by that sdbquery",
@@ -92,7 +93,7 @@ static RCoreHelpMessage help_msg_at_at = {
 
 static RCoreHelpMessage help_msg_single_quote = {
 	"'", "# run a command without evaluating any special character", "",
-	"'", "?e hello @ world", "print the given string, including the @ sign and the rest (r2.call)",
+	"'", "?e hello @ world", "print everything after `?e` (r2.call)",
 	"'", "0x123'?v $$", "run the '?v $$' command in the 0x123 offset (same as r2.callAt)",
 	"'", "@entry0'?v $$", "same as '0x but supports non numeric offsets",
 	NULL
@@ -194,15 +195,17 @@ static RCoreHelpMessage help_msg_exclamation = {
 
 static RCoreHelpMessage help_msg_root = {
 	"%var", "=value", "alias for 'env' command",
-	"\"", "[?][\"..|..\"]", "quote a command to avoid evaluaing special chars",
+	"\"", "[?][\"..|..\"]", "quote to not evaluate special chars",
+	"'", "[...]", "run a command without evaluating any special chars (see ?')",
 	"*", "[?] off[=[0x]value]", "pointer read/write data/values (see ?v, wx, wv)",
 	"(macro arg0 arg1)",  "", "manage scripting macros",
 	".", "[?] [-|(m)|f|!sh|cmd]", "Define macro or load r2, cparse or rlang file",
-	",", "[?] [/jhr]", "create a dummy table import from file and query it to filter/sort",
+	",", "[?] [/jhr]", "create and query or filter a table with data from file",
 	":", "cmd", "run an io command (same as =!)",
+	"-", "[?]", "open editor and run the r2 commands in the saved document",
 	"_", "[?]", "Print last output",
-	"=", "[?] [cmd]", "send/listen for remote commands (rap://, raps://, udp://, http://, <fd>)",
-	"<", "[...]", "push escaped string into the RCons.readChar buffer",
+	"=", "[?] [cmd]", "submit or listen to remote commands",
+	"<", "[str]", "feed stdin with given escaped string",
 	"/", "[?]", "search for bytes, regexps, patterns, ..",
 	"!", "[?] [cmd]", "run given command as in system(3)",
 	"#", "[?] !lang [..]", "Hashbang to run an rlang script",
@@ -216,26 +219,26 @@ static RCoreHelpMessage help_msg_root = {
 	"f", "[?] [name][sz][at]", "add flag at current address",
 	"g", "[?] [arg]", "generate shellcodes with r_egg",
 	"i", "[?] [file]", "get info about opened file from r_bin",
-	"k", "[?] [sdb-query]", "run sdb-query. see k? for help, 'k *', 'k **' ...",
+	"k", "[?] [query]", "evaluate an sdb query",
 	"l", "[?] [filepattern]", "list files and directories",
 	"L", "[?] [-] [plugin]", "list, unload load r2 plugins",
-	"m", "[?]", "mountpoint / filesystems (r_fs) related commands",
-	"o", "[?] [file] ([offset])", "open file at optional address",
+	"m", "[?]", "mount filesystems and inspect its contents",
+	"o", "[?] [file] ([addr])", "open file at optional address",
 	"p", "[?] [len]", "print current block with format and length",
 	"P", "[?]", "project management utilities",
 	"q", "[?] [ret]", "quit program with a return value",
 	"r", "[?] [len]", "resize file",
-	"s", "[?] [addr]", "seek to address (also for '0x', '0x1' == 's 0x1')",
+	"s", "[?] [addr]", "seek to given address",
 	"t", "[?]", "types, noreturn, signatures, C parser and more",
-	"T", "[?] [-] [num|msg]", "Text log utility (used to chat, sync, log, ...)",
+	"T", "[?] [-] [num|msg]", "text log utility (used to chat, sync, log, ...)",
 	"u", "[?]", "uname/undo seek/write",
 	"v", "", "panels mode",
-	"V", "", "visual mode (Vv = func/var anal, VV = graph mode, ...)",
+	"V", "", "visual mode (Vv: func/var, VV: graph mode, ...)",
 	"w", "[?] [str]", "multiple write operations",
 	"x", "[?] [len]", "alias for 'px' (print hexadecimal)",
 	"y", "[?] [len] [[[@]addr", "yank/paste bytes from/to memory",
 	"z", "[?]", "zignatures management",
-	"?[??]", "[expr]", "Help or evaluate math expression",
+	"?[??]", "[expr]", "help or evaluate math expression",
 	"?$?", "", "show available '$' variables and aliases",
 	"?@?", "", "misc help for '@' (seek), '~' (grep) (see ~?\"\"?)",
 	"?>?", "", "output redirection",
@@ -680,11 +683,22 @@ static int cmd_help(void *data, const char *input) {
 			}
 			core->curtab ++;
 			break;
+		case '\'':
+			{
+				struct r_prof_t prof;
+				r_prof_start (&prof);
+				r_core_cmd_call (core, input + 2);
+				r_prof_end (&prof);
+				r_core_return_value (core, (ut64)(int)prof.result);
+				eprintf ("%lf\n", prof.result);
+			}
+			break;
 		case '"':
 			{
 				struct r_prof_t prof;
 				r_prof_start (&prof);
 				if (input[1] == '"') {
+					// R2_600 - deprecate '""'
 					r_core_cmd_call (core, input + 3);
 				} else {
 					r_core_cmd (core, input + 1, 0);

@@ -1902,7 +1902,7 @@ static int cmd_debug_map(RCore *core, const char *input) {
 				sectname = r_str_word_get0 (ptr, 1);
 				/* fallthrou */
 			case 1: // get addr|libname
-				if (IS_DIGIT (*ptr)) {
+				if (isdigit (*ptr)) {
 					const char *a0 = r_str_word_get0 (ptr, 0);
 					addr = r_num_math (core->num, a0);
 				} else {
@@ -4125,7 +4125,7 @@ static void trace_traverse(RTree *t) {
 	RTreeVisitor vis = {0};
 
 	/* clear the line on stderr, because somebody has written there */
-	fprintf (stderr, "\x1b[2K\r");
+	eprintf (R_CONS_CLEAR_LINE"\r");
 	fflush (stderr);
 	vis.pre_visit = (RTreeNodeVisitCb)trace_traverse_pre;
 	r_tree_dfs (t, &vis);
@@ -6187,8 +6187,10 @@ static int cmd_debug(void *data, const char *input) {
 		}
 		break;
 	case '?': // "d?"
-	default:
 		r_core_cmd_help (core, help_msg_d);
+		break;
+	default:
+		r_core_return_invalid_command (core, "d", *input);
 		break;
 	}
 

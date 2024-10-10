@@ -48,6 +48,11 @@ typedef struct {
 
 R_API void r_core_wait(RCore *core) {
 	r_cons_context ()->breaked = true;
+#if R2__UNIX__
+	if (core->http_up) {
+		r_core_rtr_http_stop (core);
+	}
+#endif
 	r_th_kill (httpthread, true);
 	r_th_kill (rapthread, true);
 	r_th_wait (httpthread);
@@ -176,18 +181,19 @@ beach:
 R_API int r_core_rtr_http_stop(RCore *u) {
 	RCore *core = (RCore*)u;
 	const int timeout = 1; // 1 second
-	const char *port;
-	RSocket* sock;
 
 #if R2__WINDOWS__
 	r_socket_http_server_set_breaked (&r_cons_context ()->breaked);
 #endif
+	core->http_up = false;
 	if (((size_t)u) > 0xff) {
-		port = listenport? listenport: r_config_get (
-			core->config, "http.port");
-		sock = r_socket_new (0);
-		(void)r_socket_connect (sock, "localhost",
-			port, R_SOCKET_PROTO_TCP, timeout);
+		const char *port = listenport? listenport: r_config_get (core->config, "http.port");
+		char *sport = r_str_startswith (port, "0x")
+			? r_str_newf ("%d", (int)r_num_get (NULL, port))
+			: strdup (port);
+		RSocket* sock = r_socket_new (0);
+		(void)r_socket_connect (sock, "127.0.0.1", sport, R_SOCKET_PROTO_TCP, timeout);
+		free (sport);
 		r_socket_free (sock);
 	}
 	r_socket_free (s);
@@ -864,7 +870,7 @@ R_API void r_core_rtr_add(RCore *core, const char *_input) {
 R_API void r_core_rtr_remove(RCore *core, const char *input) {
 	int i;
 
-	if (IS_DIGIT (input[0])) {
+	if (isdigit (input[0])) {
 		i = r_num_math (core->num, input);
 		if (i >= 0 && i < RTR_MAX_HOSTS) {
 			r_socket_free (rtr_host[i].fd);

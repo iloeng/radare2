@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2019-2023 - pancake, thestr4ng3r */
+/* radare - LGPL - Copyright 2019-2024 - pancake, thestr4ng3r */
 
 #include <r_anal.h>
 #include <r_hash.h>
@@ -523,13 +523,12 @@ R_API bool r_anal_block_recurse_followthrough(RAnalBlock *block, RAnalBlockCb cb
 	ht_up_insert (ctx.visited, block->addr, NULL);
 	r_pvector_push (&ctx.to_visit, block);
 
-	while (!r_pvector_empty (&ctx.to_visit)) {
+	while (!r_pvector_empty (&ctx.to_visit) && !r_cons_is_breaked ()) {
 		RAnalBlock *cur = r_pvector_pop (&ctx.to_visit);
-		bool b = !cb (cur, user);
-		if (b) {
-			breaked = true;
-		} else {
+		if (cb (cur, user)) {
 			r_anal_block_successor_addrs_foreach (cur, block_recurse_successor_cb, &ctx);
+		} else {
+			breaked = true;
 		}
 	}
 

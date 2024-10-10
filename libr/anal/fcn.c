@@ -664,8 +664,16 @@ static int fcn_recurse(RAnal *anal, RAnalFunction *fcn, ut64 addr, ut64 len, int
 		existing_bb = r_anal_block_split (existing_bb, addr);
 		if (!existing_in_fcn && existing_bb) {
 			if (existing_bb->addr == fcn->addr) {
-				// our function starts directly there, so we steal what is ours!
-				fcn_takeover_block_recursive (fcn, existing_bb);
+				if (anal->opt.slow) {
+					// XXX this call causes an infinite loop if not commented
+					// our function starts directly there, so we steal what is ours!
+					fcn_takeover_block_recursive (fcn, existing_bb);
+				} else {
+					r_list_delete_data (fcn->bbs, existing_bb);
+					R_LOG_INFO ("Basic block collides with function 0x%08"PFMT64x, fcn->addr);
+					// r_anal_block_unref (existing_bb);
+					// return R_ANAL_RET_END; // MUST BE NOT FOUND
+				}
 			}
 		}
 		// r_unref (existing_bb);
@@ -1078,10 +1086,10 @@ noskip:
 				}
 			}
 			if (anal->opt.jmptbl) {
-				RAnalOp *jmp_aop = r_anal_op_new ();
+				RAnalOp jmp_aop = {0};
 				ut64 jmptbl_addr = op->ptr;
 				ut64 casetbl_addr = op->ptr;
-				if (is_delta_pointer_table (&ra, anal, fcn, op->addr, op->ptr, &jmptbl_addr, &casetbl_addr, jmp_aop)) {
+				if (is_delta_pointer_table (&ra, anal, fcn, op->addr, op->ptr, &jmptbl_addr, &casetbl_addr, &jmp_aop)) {
 					ut64 table_size, default_case = 0;
 					st64 case_shift = 0;
 					// we require both checks here since try_get_jmptbl_info uses
@@ -1090,7 +1098,7 @@ noskip:
 					// try_get_delta_jmptbl_info doesn't work at times where the
 					// lea comes after the cmp/default case cjmp, which can be
 					// handled with try_get_jmptbl_info
-					ut64 addr = jmp_aop->addr;
+					ut64 addr = jmp_aop.addr;
 					bool ready = false;
 					if (try_get_jmptbl_info (anal, fcn, addr, bb, &table_size, &default_case, &case_shift)) {
 						ready = true;
@@ -1107,7 +1115,7 @@ noskip:
 						}
 					}
 				}
-				r_anal_op_free (jmp_aop);
+				r_anal_op_fini (&jmp_aop);
 			}
 			break;
 		case R_ANAL_OP_TYPE_LOAD:

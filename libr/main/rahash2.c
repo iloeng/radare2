@@ -291,7 +291,8 @@ static int do_hash(RahashOptions *ro, const char *file, const char *algo, RIO *i
 					}
 					do_hash_internal (ctx, ro, hashbit, buf, nsize, pj, rad, 1);
 				}
-				do_hash_internal (ctx, ro, hashbit, NULL, 0, pj, rad, 1);
+				// Commented out to fix issue #23371
+				// do_hash_internal (ctx, ro, hashbit, NULL, 0, pj, rad, 1);
 				ro->from = ofrom;
 				ro->to = oto;
 			}
@@ -347,7 +348,7 @@ static int do_help(int line) {
 
 static void algolist(int mode) {
 	RCrypto *cry = r_crypto_new ();
-	r_crypto_list (cry, NULL, mode);
+	r_crypto_list (cry, NULL, mode | (int)R_CRYPTO_TYPE_ALL << 8);
 	r_crypto_free (cry);
 }
 

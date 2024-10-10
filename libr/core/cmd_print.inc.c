@@ -286,6 +286,15 @@ static RCoreHelpMessage help_msg_p_minus = {
 	NULL
 };
 
+static RCoreHelpMessage help_msg_pdf = {
+	"Usage:", "pdf[sj]", " # disassemble function (needs to be analized with 'af' or so)",
+	"pdf", "", "disassemble function in a linear way (see pdfr)",
+	"pdfj", "", "disassemble function in json (see pdfJ)",
+	"pdfr", "", "disassemble function recursively (alias for pdr)",
+	"pdfs", "", "disassemble function summary (see also pdsf)",
+	NULL,
+};
+
 static RCoreHelpMessage help_msg_pd = {
 	"Usage:", "p[dD][ajbrfils] [[-]len]", " # Print N bytes/instructions bw/forward",
 	"NOTE: ", "len", "parameter can be negative",
@@ -301,8 +310,7 @@ static RCoreHelpMessage help_msg_pd = {
 	"pdC", "", "show comments found in N instructions",
 	"pde", "[q|qq|j] N", "disassemble N instructions following execution flow from current PC",
 	"pdo", " N", "convert esil expressions of N instructions to C (pdO for bytes)",
-	"pdf", "", "disassemble function",
-	"pdfs", "", "disassemble function summary",
+	"pdf", "[?]", "disassemble function",
 	"pdi", "", "like 'pi', with offset and bytes",
 	"pdj", "", "disassemble to json",
 	"pdJ", "", "formatted disassembly like pd as json",
@@ -352,6 +360,21 @@ static RCoreHelpMessage help_msg_pdu = {
 	NULL
 };
 
+static RCoreHelpMessage help_msg_pfb = {
+	"Usage:", "pfb", "print formatted bitfields",
+	"pfb", " [fmt] [fnames]", "print formatted bitfield in ascii art",
+	"pfbc", " [fmt] [fnames]", "same as pfb, but using C syntax",
+	"pfbj", " [fmt] [fnames]", "same as pfb but in json output",
+	"pfbq", " [fmt] [fnames]", "same as pfb, but quieter oneliner",
+	"pfbd", " [fmt] [fnames]", "same as pfb, but for debugging reasons",
+	"Examples:", "", "",
+	" ", "pfb 3b4b foo bar", "2 bitfields, first of 3 bits and second of 4",
+	" ", "pfb 3b+4b foo bar", "same as above, the + sign is ignored",
+	" ", "pfb 3b..4b foo bar", "same as above, but separated by 2 unused bits",
+	" ", "pfb 3b2.4b foo bar", "same as above, you can use digits and dot",
+	NULL
+};
+
 static RCoreHelpMessage help_msg_pf = {
 	"Usage:", PF_USAGE_STR, "",
 	"Commands:", "", "",
@@ -367,7 +390,7 @@ static RCoreHelpMessage help_msg_pf = {
 	"pf.", "fmt_name.field_name[i]", "show element i of array field_name",
 	"pf.", "fmt_name [0|cnt]fmt", "define a new named format",
 	"pf?", "fmt_name", "show the definition of a named format",
-	"pfb", " binfmt", "binary format",
+	"pfb", "[?] bitfmt", "print formatted bitfields",
 	"pfc", " fmt_name|fmt", "show data using (named) format as C string",
 	"pfd.", "fmt_name", "show data using named format as graphviz commands",
 	"pfj ", "fmt_name|fmt", "show data using (named) format in JSON",
@@ -494,19 +517,22 @@ static RCoreHelpMessage help_msg_pif = {
 };
 
 static RCoreHelpMessage help_msg_po = {
-	"Usage:", "po[24aAdlmorsx]", " [hexpairs] @ addr[!bsize] (see also `poke`)",
+	"Usage:", "po[24aAdlmorsxS]", " [hexpairs] @ addr[!bsize] (see also `poke`)",
 	"po[24aAdlmorsx]", "", "without hexpair values, clipboard is used",
 	"po2", " [val]", "2=  2 byte endian swap",
 	"po4", " [val]", "4=  4 byte endian swap",
 	"poa", " [val]", "+=  addition (f.ex: poa 0102)",
 	"poA", " [val]", "&=  and",
 	"pod", " [val]", "/=  divide",
+	"poD", " [algo] [key] [iv]", "Print block decryption",
+	"poE", " [algo] [key] [iv]", "Print block encryption",
 	"pol", " [val]", "<<= shift left",
 	"pom", " [val]", "*=  multiply",
 	"poo", " [val]", "|=  or",
 	"por", " [val]", ">>= shift right",
 	"pos", " [val]", "-=  substraction",
 	"pox", " [val]", "^=  xor  (f.ex: pox 0x90)",
+	"poS", " [algo] [key]", "Compute and print block signature",
 	NULL
 };
 
@@ -519,12 +545,11 @@ static RCoreHelpMessage help_msg_pq = {
 
 static RCoreHelpMessage help_msg_ps = {
 	"Usage:", "ps[abijqpsuwWxz+] [len]", "Print String (optionally specify the length)",
-	"ps", "", "print string until a first non-printable character",
+	"ps", "[j]", "print string until a first non-printable character",
 	"ps+", "[j]", "print libc++ std::string (same-endian, ascii, zero-terminated)",
 	"psa", "", "print any type of string (psp/psw/psW/psz/..)",
 	"psb", "", "print strings in current block",
 	"psi", "", "print string inside curseek",
-	"psj", "", "print string in JSON format",
 	"psn", "[l] [len]", "print string until newline",
 	"psp", "[?][j]", "print pascal string",
 	"psq", "", "alias for pqs",
@@ -916,9 +941,9 @@ static void cmd_printmsg(RCore *core, const char *input) {
 	} else if (r_str_startswith (input, " ")) {
 		r_cons_print (input + 1);
 	} else if (r_str_startswith (input, "f ")) {
-		R_LOG_TODO ("waiting for r2shell");
+		R_LOG_TODO ("printf not implemented. use ?e, echo or print");
 	} else if (r_str_startswith (input, "fln ")) {
-		R_LOG_TODO ("waiting for r2shell");
+		R_LOG_TODO ("printfln not implemented. use ?e, echo or print");
 	} else {
 		r_core_cmd_help_match (core, help_msg_pr, "print");
 	}
@@ -1739,6 +1764,9 @@ static ut64 read_val(RBitmap *bm, int pos, int sz) {
 
 enum {
 	PFB_DBG,
+	PFB_JSN = 'j',
+	PFB_COD = 'c',
+	PFB_QUI = 'q',
 	PFB_ART
 };
 
@@ -1747,15 +1775,17 @@ typedef struct {
 	int pos;
 	ut64 value;
 	const char *name;
+	bool skip;
 } RLart;
 
-static RLart *lart_add(RList *list, const char *name, int pos, int sz, ut64 value) {
+static RLart *lart_add(RList *list, const char *name, int pos, int sz, ut64 value, bool skip) {
 	RLart *la = R_NEW0 (RLart);
 	if (la) {
 		la->sz = sz;
 		la->pos = pos;
 		la->name = name;
 		la->value = value;
+		la->skip = skip;
 		r_list_append (list, la);
 	}
 	return la;
@@ -1769,38 +1799,105 @@ static void lart_free(RList *list) {
 	r_list_free (list);
 }
 
+static int whatbpos(const char *arg) {
+	int bpos = 0;
+	int n = 0;
+	while (*arg && *arg != ' ') {
+		if (isdigit (*arg)) {
+			n = atoi (arg);
+			if (n > 64) {
+				R_LOG_ERROR ("Too large. Max is 64");
+				return bpos;
+			}
+			while (isdigit (*arg)) {
+				arg += 1;
+			}
+			arg--;
+		} else if (*arg == '.') {
+			if (n < 1) {
+				n = 1;
+			}
+			bpos += n;
+			n = 0;
+		} else if (*arg == '+') {
+			// used to separate tokens
+			// for example 3+3:4b  -> [0..3] + [6..10]
+		} else if (*arg == 'b') {
+			bpos += n;
+			n = 0;
+		}
+		arg++;
+	}
+	return bpos;
+}
+
 static void r_core_cmd_print_binformat(RCore *core, const char *arg, int mode) {
-	// r_io_read_at (core->io, core->offset, buf, sizeof (buf));
 	const char *fmt = arg;
 	int n = 0;
 	char *names = strchr (fmt, ' ');
+	const bool be = r_config_get_b (core->config, "cfg.bigendian");
 	RList *lnames = NULL;
 	if (names) {
 		names = strdup (names + 1);
 		lnames = r_str_split_list (names, " ", 0);
 	}
-	int i = 0;
+	unsigned int i = 0;
 	int bpos = 0;
 	ut64 v = 0;
-	// bigbitendian
-	// r_core_cmd0 (core, "pb 8");
+	PJ *pj = NULL;
+	if (mode == PFB_JSN) {
+		pj = r_core_pj_new (core);
+		pj_a (pj);
+	}
+
 	RBitmap *bm = r_bitmap_new (core->blocksize * 8);
 	r_bitmap_set_bytes (bm, core->block, core->blocksize);
 	RList *lart = lart_new ();
 
+	if (mode == PFB_COD) {
+		r_cons_printf ("struct bitfield {\n");
+	} else if (mode == PFB_QUI) {
+		ut64 bv = 0;
+		int maxpos = whatbpos (arg);
+		for (i = 0; i < maxpos; i++) {
+			bool v = read_val (bm, i, 1);
+			if (v) {
+				if (be) {
+					bv |= (1 << i);
+				} else {
+					bv |= (1 << (maxpos - i - 1));
+				}
+			}
+		}
+		r_cons_printf ("0x%08"PFMT64x":", bv);
+	}
 	while (*arg && *arg != ' ') {
-		if (IS_DIGIT (*arg)) {
+		if (isdigit (*arg)) {
 			n = atoi (arg);
 			if (n > 64) {
 				R_LOG_ERROR ("Too large. Max is 64");
 				lart_free (lart);
 				r_bitmap_free (bm);
+				pj_free (pj);
 				return;
 			}
-			while (IS_DIGIT (*arg)) {
+			while (isdigit (*arg)) {
 				arg += 1;
 			}
 			arg--;
+		} else if (*arg == '.') {
+			// skip bit
+			if (n < 1) {
+				n = 1;
+			}
+			const char *name = lnames? r_list_get_n (lnames, i): "unused";
+			if (mode == PFB_COD) {
+				r_cons_printf ("    unsigned %s: %d; // 0x%08"PFMT64x"\n", name, n, v);
+			}
+			lart_add (lart, "?", bpos, n, v, true);
+			bpos += n;
+			n = 0;
+			i++;
 		} else if (*arg == '+') {
 			// used to separate tokens
 			// for example 3+3:4b  -> [0..3] + [6..10]
@@ -1809,42 +1906,90 @@ static void r_core_cmd_print_binformat(RCore *core, const char *arg, int mode) {
 				R_LOG_ERROR ("Invalid bitformat string");
 				lart_free (lart);
 				r_bitmap_free (bm);
+				pj_free (pj);
 				return;
 			}
-			char *name = lnames? r_list_get_n (lnames, i): NULL;
+			const char *name = lnames? r_list_get_n (lnames, i): NULL;
 			v = read_val (bm, bpos, n);
 			switch (mode) {
-			case PFB_DBG:
-				r_cons_printf ("field: %d\n", i);
+			case PFB_QUI:
+				if (R_STR_ISNOTEMPTY (name)) {
+					r_cons_printf (" %s[%d..%d]=%"PFMT64d, name, bpos, bpos + n, v);
+				} else {
+					r_cons_printf (" %s[%d..%d]=%"PFMT64d, "unnamed", bpos, bpos + n, v);
+				}
+				break;
+			case PFB_JSN:
+				pj_o (pj);
 				if (name) {
+					pj_ks (pj, "name", name);
+				}
+				pj_kn (pj, "off", bpos);
+				pj_kn (pj, "size", n);
+				pj_kn (pj, "value", v);
+				pj_end (pj);
+				break;
+			case PFB_DBG:
+				r_cons_printf ("field: %u\n", i);
+				if (R_STR_ISNOTEMPTY (name)) {
 					r_cons_printf (" name: %s\n", name);
 				}
 				r_cons_printf ("  off: %d\n", bpos);
 				r_cons_printf ("  siz: %d\n", n);
 				r_cons_printf ("  val: %"PFMT64d"\n", v);
 				break;
+			case PFB_COD:
+				if (R_STR_ISNOTEMPTY (name)) {
+					r_cons_printf ("    unsigned %s: %d; // 0x%08"PFMT64x"\n", name, n, v);
+				} else {
+					r_cons_printf ("    unsigned: %d; // 0x%08"PFMT64x"\n", n, v);
+				}
+				break;
 			case PFB_ART:
-				lart_add (lart, name, bpos, n, v);
+				lart_add (lart, name, bpos, n, v, false);
 				break;
 			}
 			i++;
 			bpos += n;
+			n = 0;
 		}
 		arg++;
 	}
-	if (mode == PFB_ART) {
+	if (mode == PFB_COD) {
+		r_cons_printf ("}\n");
+	} else if (mode == PFB_QUI) {
+		r_cons_newline ();
+	} else if (mode == PFB_JSN) {
+		pj_end (pj);
+		char *s = pj_drain (pj);
+		r_cons_printf ("%s\n", s);
+		free (s);
+	} else if (mode == PFB_ART) {
+		ut64 bv = 0;
 		for (i = 0; i < bpos; i++) {
 			bool v = read_val (bm, i, 1);
-			r_cons_printf ("%d", v);
+			r_cons_printf ("%d", v? 1: 0);
+			if (v) {
+				if (be) {
+					bv |= (1 << i);
+				} else {
+					bv |= (1 << (bpos - i - 1));
+				}
+			}
 		}
-		r_cons_printf ("     (big bit endian)\n");
+		r_cons_printf ("     0x%08"PFMT64x"\n", bv);
 		RLart *la;
 		RListIter *iter;
 		char firstline[1024] = {0};
 		memset (firstline, ' ', sizeof (firstline) - 1);
 		int padsz = 0;
 		r_list_foreach (lart, iter, la) {
-			if (la->sz == 1) {
+			if (la->skip) {
+				int i;
+				for (i = 0; i < la->sz; i++) {
+					r_cons_printf (" ");
+				}
+			} else if (la->sz == 1) {
 				r_cons_printf ("V");
 			} else {
 				r_cons_printf ("\\");
@@ -1855,7 +2000,9 @@ static void r_core_cmd_print_binformat(RCore *core, const char *arg, int mode) {
 				r_cons_printf ("/");
 			}
 			padsz = la->pos - 1 + (la->sz / 2);
-			firstline[padsz + 1] = '|';
+			if (!la->skip) {
+				firstline[padsz + 1] = '|';
+			}
 		}
 		firstline[padsz + 2] = 0;
 		int totalpad = padsz + 4;
@@ -1863,20 +2010,23 @@ static void r_core_cmd_print_binformat(RCore *core, const char *arg, int mode) {
 		r_list_reverse (lart);
 		r_list_foreach (lart, iter, la) {
 			int padsz = la->pos - 1 + (la->sz / 2);
-			char *v = r_str_newf ("%s= %"PFMT64d" (0x%"PFMT64x")", la->name?la->name:"", la->value, la->value);
+			char *v = r_str_newf ("%s= %"PFMT64d" (0x%"PFMT64x")",
+					la->name? la->name: "", la->value, la->value);
 			char *pad2 = strdup (r_str_pad ('-', totalpad - padsz));
 			char *pad = r_str_ndup (firstline, padsz + 1);
-			if (la->value > 0xffff) {
+			if (la->skip) {
+				// do nothing here
+			} else if (la->value > 0xffff) {
 				r_cons_printf ("%s`-%s %8s = 0x%016"PFMT64x" @ %d + %d\n",
-						pad?pad:"", pad2,
-						la->name?la->name: "",
+						pad? pad: "", pad2,
+						la->name? la->name: "",
 						la->value,
 						la->pos, la->sz
 					      );
 			} else {
 				r_cons_printf ("%s`-%s %8s = %4"PFMT64o"o %5"PFMT64d"   0x%02"PFMT64x" @ %d + %d\n",
-						pad?pad:"", pad2,
-						la->name?la->name: "",
+						pad? pad: "", pad2,
+						la->name? la->name: "",
 						la->value, la->value, la->value,
 						la->pos, la->sz);
 			}
@@ -1982,8 +2132,18 @@ static void cmd_print_format(RCore *core, const char *_input, const ut8* block, 
 	case 'b': // "pfb"
 		if (_input[2] == ' ') {
 			r_core_cmd_print_binformat (core, r_str_trim_head_ro (_input + 2), PFB_ART);
+		} else if (_input[2] == 'q') { // "pfbq"
+			r_core_cmd_print_binformat (core, r_str_trim_head_ro (_input + 3), PFB_QUI);
+		} else if (_input[2] == 'j') { // "pfbj"
+			r_core_cmd_print_binformat (core, r_str_trim_head_ro (_input + 3), PFB_JSN);
+		} else if (_input[2] == 'c') { // "pfbc"
+			r_core_cmd_print_binformat (core, r_str_trim_head_ro (_input + 3), PFB_COD);
+		} else if (_input[2] == 'd') { // "pfbd"
+			r_core_cmd_print_binformat (core, r_str_trim_head_ro (_input + 3), PFB_DBG);
+		} else if (_input[2] == '?') {
+			r_core_cmd_help (core, help_msg_pfb);
 		} else {
-			r_core_cmd_help_match (core, help_msg_pf, "pfb");
+			r_core_return_invalid_command (core, "pfb", _input[2]);
 		}
 		return;
 	case 'o': // "pfo"
@@ -3119,6 +3279,57 @@ static int cmd_print_pxA(RCore *core, int len, const char *input) {
 	return true;
 }
 
+static void print_encrypted_block(RCore *core, const char *algo, const char *key, int direction, const char *iv) {
+	int keylen = 0;
+	ut8 *binkey = NULL;
+	if (!strncmp (key, "s:", 2)) {
+		binkey = (ut8 *)strdup (key + 2);
+		keylen = strlen (key + 2);
+	} else {
+		binkey = (ut8 *)strdup (key);
+		keylen = r_hex_str2bin (key, binkey);
+	}
+	if (!binkey) {
+		return;
+	}
+	if (keylen < 1) {
+		const char *mode = (!direction)? "Encryption": "Decryption";
+		R_LOG_ERROR ("%s key not defined", mode);
+		free (binkey);
+		return;
+	}
+	RCryptoJob *cj = r_crypto_use (core->crypto, algo);
+	if (cj && cj->h->type == R_CRYPTO_TYPE_ENCRYPT) {
+		if (r_crypto_job_set_key (cj, binkey, keylen, 0, direction)) {
+			if (iv) {
+				ut8 *biniv = malloc (strlen (iv) + 1);
+				int ivlen = r_hex_str2bin (iv, biniv);
+				if (ivlen < 1) {
+					ivlen = strlen (iv);
+					strcpy ((char *)biniv, iv);
+				}
+				if (!r_crypto_job_set_iv (cj, biniv, ivlen)) {
+					R_LOG_ERROR ("Invalid IV");
+					return;
+				}
+			}
+			r_crypto_job_update (cj, (const ut8 *)core->block, core->blocksize);
+
+			int result_size = 0;
+			ut8 *result = r_crypto_job_get_output (cj, &result_size);
+			if (result) {
+				r_print_bytes (core->print, result, result_size, "%02x");
+				free (result);
+			}
+		}
+		free (cj);
+	} else {
+		R_LOG_ERROR ("Unknown %s algorithm '%s'", ((!direction)? "encryption": "decryption"), algo);
+	}
+	free (binkey);
+	return;
+}
+
 static void cmd_print_op(RCore *core, const char *input) {
 	ut8 *buf = NULL;
 	if (!input[0]) {
@@ -3152,6 +3363,67 @@ static void cmd_print_op(RCore *core, const char *input) {
 			r_core_cmd_help (core, help_msg_po);
 		}
 		break;
+	case 'S': { // "poS"
+		char *cmd = strdup (input);
+		RList *args = r_str_split_list (cmd, " ", 0);
+		char *algo = NULL;
+		if (args) {
+			algo = r_list_get_n (args, 1);
+		}
+		if (!args || !algo) {
+			r_crypto_list (core->crypto, r_cons_printf, 0 | (int)R_CRYPTO_TYPE_SIGNATURE << 8);
+			r_core_cmd_help_match (core, help_msg_po, "poS");
+			break;
+		}
+		RCryptoJob *cj = r_crypto_use (core->crypto, algo);
+		if (cj && cj->h->type == R_CRYPTO_TYPE_SIGNATURE) {
+			char *key = r_list_get_n (args, 2);
+			ut8 *binkey = (ut8 *)strdup (key);
+			int keylen = r_hex_str2bin (key, binkey);
+			if (!keylen) {
+				R_LOG_ERROR ("Invalid key");
+				break;
+			}
+			if (!r_crypto_job_set_key (cj, binkey, keylen, 0, R_CRYPTO_DIR_ENCRYPT)) {
+				break;
+			}
+			r_crypto_job_update (cj, (const ut8 *)core->block, core->blocksize);
+
+			int result_size = 0;
+			ut8 *result = r_crypto_job_get_output (cj, &result_size);
+			if (result) {
+				r_print_bytes (core->print, result, result_size, "%02x");
+				free (result);
+			}
+		} else {
+			R_LOG_ERROR ("Unsupported signature algorithm: %s", algo);
+		}
+		break;
+	}
+	case 'D': // "poD"
+	case 'E': { // "poE"
+		int direction = (input[1] == 'E')? R_CRYPTO_DIR_ENCRYPT: R_CRYPTO_DIR_DECRYPT;
+		char *cmd = strdup (input);
+		RList *args = r_str_split_list (cmd, " ", 0);
+		char *algo = NULL;
+		if (args) {
+			algo = r_list_get_n (args, 1);
+		}
+		if (!args || !algo) {
+			r_crypto_list (core->crypto, r_cons_printf, 0 | (int)R_CRYPTO_TYPE_ENCRYPT << 8);
+			r_core_cmd_help_match_spec (core, help_msg_po, "po", input[1]);
+			break;
+		}
+		char *key = r_list_get_n (args, 2);
+		if (!key) {
+			const char *mode = (direction == R_CRYPTO_DIR_ENCRYPT)? "Encryption": "Decryption";
+			R_LOG_ERROR ("%s key not defined", mode);
+			return;
+		}
+		char *iv = r_list_get_n (args, 3);
+		print_encrypted_block (core, algo, key, direction, iv);
+		break;
+	}
 	case '\0':
 	case '?':
 	default:
@@ -3593,36 +3865,6 @@ restore_conf:
 	}
 }
 
-static void algolist(RCore *core, int mode) {
-	int i;
-	PJ *pj = NULL;
-	if (mode == 'j') {
-		pj = r_core_pj_new (core);
-		pj_a (pj);
-	}
-	for (i = 0; i < R_HASH_NBITS; i++) {
-		ut64 bits = 1ULL << i;
-		const char *name = r_hash_name (bits);
-		if (name && *name) {
-			if (mode == 'j') {
-				pj_s (pj, name);
-			} else if (mode) {
-				r_cons_println (name);
-			} else {
-				r_cons_printf ("%s ", name);
-			}
-		}
-	}
-	if (pj) {
-		pj_end (pj);
-		char *s = pj_drain (pj);
-		r_cons_printf ("%s\n", s);
-		free (s);
-	} else if (!mode) {
-		r_cons_newline ();
-	}
-}
-
 static bool cmd_print_ph(RCore *core, const char *input) {
 	char algo[128];
 	ut32 osize = 0, len = core->blocksize;
@@ -3634,15 +3876,15 @@ static bool cmd_print_ph(RCore *core, const char *input) {
 		return true;
 	}
 	if (!i0 || i0 == 'l' || i0 == 'L') {
-		algolist (core, 1);
+		RCrypto *cry = r_crypto_new ();
+		r_crypto_list (cry, NULL, 'q' | (int)R_CRYPTO_TYPE_HASHER << 8);
+		r_crypto_free (cry);
 		return true;
 	}
 	if (i0 == 'j') {
-		algolist (core, 'j');
-		return true;
-	}
-	if (i0 == '=') {
-		algolist (core, 0);
+		RCrypto *cry = r_crypto_new ();
+		r_crypto_list (cry, NULL, 'J' | (int)R_CRYPTO_TYPE_HASHER << 8);
+		r_crypto_free (cry);
 		return true;
 	}
 	if (i0 == ':') {
@@ -5574,7 +5816,7 @@ static ut8 *decode_text(RCore *core, ut64 offset, size_t len, bool zeroend) {
 static bool cmd_pi(RCore *core, const char *input, int len, int l, ut8 *block) {
 	// len is block_len
 	char ch = input[1];
-	if (ch == '+' || ch == '-' || IS_DIGIT (ch)) {
+	if (ch == '+' || ch == '-' || isdigit (ch)) {
 		ch = ' ';
 		l = r_num_math (core->num, input + 1);
 	}
@@ -6582,7 +6824,7 @@ static int cmd_print(void *data, const char *input) {
 		const char *sp = (input[1] == '.' || input[1] == '+')
 			? input + 2: strchr (input + 1, ' ');
 
-		if (IS_DIGIT (input[1])) {
+		if (isdigit (input[1])) {
 			sp = input + 1;
 		} else if (!sp && input[1] == '-') {
 			sp = input + 1;
@@ -6812,7 +7054,7 @@ static int cmd_print(void *data, const char *input) {
 		case 'f': // "pdf"
 			processed_cmd = true;
 			if (input[2] == '?') {
-				r_core_cmd_help_match (core, help_msg_pd, "pdf");
+				r_core_cmd_help (core, help_msg_pdf);
 			} else if (input[2] == 's') { // "pdfs"
 				ut64 oseek = core->offset;
 				int oblock = core->blocksize;
@@ -6828,63 +7070,67 @@ static int cmd_print(void *data, const char *input) {
 					r_core_seek (core, oseek, SEEK_SET);
 				}
 				processed_cmd = true;
-			} else {
+			} else if (input[2] == 0 || input[2] == 'j' || input[2] == 'r') {
 				ut32 bsz = core->blocksize;
 				RAnalFunction *f = r_anal_get_fcn_in (core->anal, core->offset, R_ANAL_FCN_TYPE_ROOT);
 				if (!f) {
 					f = r_anal_get_fcn_in (core->anal, core->offset, 0);
 				}
 				RListIter *locs_it = NULL;
-				if (f && input[2] == 'j') { // "pdfj"
-					RAnalBlock *b;
-					ut32 fcn_size = r_anal_function_realsize (f);
-					const char *orig_bb_middle = r_config_get (core->config, "asm.bbmiddle");
-					r_config_set_i (core->config, "asm.bbmiddle", false);
-					pj = r_core_pj_new (core);
-					if (!pj) {
-						break;
-					}
-					pj_o (pj);
-					pj_ks (pj, "name", f->name);
-					pj_kn (pj, "size", fcn_size);
-					pj_kn (pj, "addr", f->addr);
-					pj_k (pj, "ops");
-					pj_a (pj);
-					r_list_sort (f->bbs, bb_cmpaddr);
-					r_list_foreach (f->bbs, locs_it, b) {
-						ut8 *buf = malloc (b->size);
-						if (buf) {
-							r_io_read_at (core->io, b->addr, buf, b->size);
-							r_core_print_disasm_json_ipi (core, b->addr, buf, b->size, 0, pj, NULL);
-							free (buf);
-						} else {
-							R_LOG_ERROR ("Cannot allocate %"PFMT64u" byte(s)", b->size);
+				if (f) {
+					if (input[2] == 'r') { // "pdfr"
+						r_core_cmd0 (core, "pdr");
+					} else if (input[2] == 'j') { // "pdfj"
+						RAnalBlock *b;
+						ut32 fcn_size = r_anal_function_realsize (f);
+						const char *orig_bb_middle = r_config_get (core->config, "asm.bbmiddle");
+						r_config_set_i (core->config, "asm.bbmiddle", false);
+						pj = r_core_pj_new (core);
+						if (!pj) {
+							break;
 						}
-					}
-					pj_end (pj);
-					pj_end (pj);
-					r_cons_printf ("%s\n", pj_string (pj));
-					pj_free (pj);
-					pd_result = false;
-					r_config_set (core->config, "asm.bbmiddle", orig_bb_middle);
-				} else if (f) {
-					ut64 linearsz = r_anal_function_linear_size (f);
-					ut64 realsz = r_anal_function_realsize (f);
-					if (realsz + 4096 < linearsz) {
-						R_LOG_ERROR ("Linear size differs too much from the bbsum, please use pdr instead");
+						pj_o (pj);
+						pj_ks (pj, "name", f->name);
+						pj_kn (pj, "size", fcn_size);
+						pj_kn (pj, "addr", f->addr);
+						pj_k (pj, "ops");
+						pj_a (pj);
+						r_list_sort (f->bbs, bb_cmpaddr);
+						r_list_foreach (f->bbs, locs_it, b) {
+							ut8 *buf = malloc (b->size);
+							if (buf) {
+								r_io_read_at (core->io, b->addr, buf, b->size);
+								r_core_print_disasm_json_ipi (core, b->addr, buf, b->size, 0, pj, NULL);
+								free (buf);
+							} else {
+								R_LOG_ERROR ("Cannot allocate %"PFMT64u" byte(s)", b->size);
+							}
+						}
+						pj_end (pj);
+						pj_end (pj);
+						r_cons_printf ("%s\n", pj_string (pj));
+						pj_free (pj);
+						pd_result = false;
+						r_config_set (core->config, "asm.bbmiddle", orig_bb_middle);
 					} else {
-						ut64 at = f->addr; // TODO: should be min from r_anal_function_get_range()?
-						ut64 sz = R_MAX (linearsz, realsz);
-						ut8 *buf = calloc (sz, 1);
-						if (buf) {
-							(void)r_io_read_at (core->io, at, buf, sz);
-							int dislen = r_core_print_disasm (core, at, buf, sz, sz, 0, NULL, true, false, NULL, f);
-							r_core_return_value (core, dislen);
-							free (buf);
-							// r_core_cmdf (core, "pD %d @ 0x%08" PFMT64x, f->_size > 0 ? f->_size: r_anal_function_realsize (f), f->addr);
+						ut64 linearsz = r_anal_function_linear_size (f);
+						ut64 realsz = r_anal_function_realsize (f);
+						if (realsz + 4096 < linearsz) {
+							R_LOG_ERROR ("Linear size differs too much from the bbsum, please use pdr instead");
+						} else {
+							ut64 at = f->addr; // TODO: should be min from r_anal_function_get_range()?
+							ut64 sz = R_MAX (linearsz, realsz);
+							ut8 *buf = calloc (sz, 1);
+							if (buf) {
+								(void)r_io_read_at (core->io, at, buf, sz);
+								int dislen = r_core_print_disasm (core, at, buf, sz, sz, 0, NULL, true, false, NULL, f);
+								r_core_return_value (core, dislen);
+								free (buf);
+								// r_core_cmdf (core, "pD %d @ 0x%08" PFMT64x, f->_size > 0 ? f->_size: r_anal_function_realsize (f), f->addr);
+							}
 						}
+						pd_result = false;
 					}
-					pd_result = false;
 				} else {
 					R_LOG_ERROR ("pdf: Cannot find function at 0x%08"PFMT64x, core->offset);
 					processed_cmd = true;
@@ -6893,6 +7139,8 @@ static int cmd_print(void *data, const char *input) {
 				if (bsz != core->blocksize) {
 					r_core_block_size (core, bsz);
 				}
+			} else {
+				r_core_return_invalid_command (core, "pdf", input[2]);
 			}
 			l = 0;
 			break;
@@ -8214,7 +8462,7 @@ static int cmd_print(void *data, const char *input) {
 					if (input[1] == '.') {
 						sp = input + 2;
 					}
-					if (IS_DIGIT (input[1])) {
+					if (isdigit (input[1])) {
 						sp = input + 1;
 					}
 					if (sp) {
@@ -8644,11 +8892,14 @@ static int cmd_print(void *data, const char *input) {
 			r_list_free (list);
 		}
 		break;
+	case '?':
+		r_core_cmd_help (core, help_msg_p);
+		break;
 	default:
 		if (*input && input[1] == 'j') {
 			r_cons_cmd_help_json (help_msg_p);
 		} else {
-			r_core_cmd_help (core, help_msg_p);
+			r_core_return_invalid_command (core, "p", *input);
 		}
 		break;
 	}

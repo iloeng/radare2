@@ -45,6 +45,7 @@ r_arch_sources = [
   'p/m68k_gnu/m68k-dis.c',
   'p/m68k_gnu/m68k-opc.c',
   'p/m68k_cs/plugin.c',
+# 'p/m68k_cs/m68kass.c',
   'p/m680x_cs/plugin.c',
   'p/nds32/plugin.c',
   'p/arm/gnu/floatformat.c',
@@ -167,6 +168,7 @@ r_arch_sources = [
   'p/avr/assemble.c',
   'p/8051/plugin.c',
   'p/dalvik/plugin.c',
+  'p/dalvik_ns/plugin.c',
   'p/fslsp/plugin.c',
 ]
 

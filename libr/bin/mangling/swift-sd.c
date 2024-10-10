@@ -152,8 +152,18 @@ static char *swift_demangle_cmd(const char *s) {
 					free (swift_demangle);
 					swift_demangle = r_str_newf ("%s swift-demangle", xcrun);
 					have_swift_demangle = 1;
+					free (xcrun);
+				} else {
+					free (swift_demangle);
+					char *found = r_file_path ("swift");
+					if (found) {
+						free (swift_demangle);
+						swift_demangle = r_str_newf ("%s demangle", found);
+						free (found);
+					}
+					have_swift_demangle = 1;
+
 				}
-				free (xcrun);
 			}
 		}
 	}
@@ -196,6 +206,20 @@ static char *swift_demangle_lib(const char *s) {
 		haveSwiftCore = true;
 	}
 	if (swift_demangle) {
+		char *_s = NULL;
+		if (*s == '$') {
+			// all swift symbols must start with _$ now
+			_s = r_str_newf ("_%s", s);
+			char *res = swift_demangle (_s, strlen (_s), NULL, NULL, 0, 0);
+			free (_s);
+			return res;
+		}
+		if (*s == 's' && isdigit (s[1])) {
+			_s = r_str_newf ("_$%s", s);
+			char *res = swift_demangle (_s, strlen (_s), NULL, NULL, 0, 0);
+			free (_s);
+			return res;
+		}
 		return swift_demangle (s, strlen (s), NULL, NULL, 0, 0);
 	}
 #endif
@@ -253,7 +277,7 @@ static const char *conformsto(char p) {
 }
 
 static bool looks_valid(char p) {
-	if (IS_DIGIT (p)) {
+	if (isdigit (p)) {
 		return true;
 	}
 	switch (p) {
@@ -660,7 +684,7 @@ moreitems:
 				case 'T':
 				case 'I':
 					p = resolve (types, q + 0, &attr); // type
-					if (p && *p && IS_DIGIT (p[1])) {
+					if (p && *p && isdigit (p[1])) {
 						p--;
 					}
 					break;
@@ -690,6 +714,9 @@ repeat:;
 								r_strbuf_appendf (out, "...%s", q);
 								q += strlen (q);
 							}
+						}
+						if (n == 0) {
+							continue;
 						}
 						q = Q + n;
 						if (q >= q_end) {
@@ -844,7 +871,11 @@ repeat:;
 							r_strbuf_appendf (out, "...%s", q);
 							break;
 						}
-						q = n + 1;
+						if (n) {
+							q = n + 1;
+						} else {
+							q++;
+						}
 					}
 				}
 			}
@@ -949,17 +980,6 @@ R_API char *r_bin_demangle_swift(const char *s, bool syscmd, bool trylib) {
 		}
 	}
 #endif
-#if 0
-	if (syscmd || trylib) {
-		if (r_str_startswith (s, "So") && isdigit (s[2])) {
-			char *ss = r_str_newf ("$s%s", s);
-			char *res = r_bin_demangle_swift (ss, syscmd, trylib);
-			free (ss);
-			return res;
-		}
-	} else {
-#endif
-//	}
 	s = str_removeprefix (s, "imp.");
 	s = str_removeprefix (s, "reloc.");
 	// check if string doesnt start with __ then return

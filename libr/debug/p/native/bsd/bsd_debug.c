@@ -89,12 +89,12 @@ int bsd_handle_signals(RDebug *dbg) {
 	dbg->reason.signum = siginfo.si_signo;
 
 	switch (dbg->reason.signum) {
-		case SIGABRT:
-			dbg->reason.type = R_DEBUG_REASON_ABORT;
-			break;
-		case SIGSEGV:
-			dbg->reason.type = R_DEBUG_REASON_SEGFAULT;
-			break;
+	case SIGABRT:
+		dbg->reason.type = R_DEBUG_REASON_ABORT;
+		break;
+	case SIGSEGV:
+		dbg->reason.type = R_DEBUG_REASON_SEGFAULT;
+		break;
 	}
 
 	return 0;
@@ -106,20 +106,32 @@ int bsd_handle_signals(RDebug *dbg) {
 bool bsd_reg_write(RDebug *dbg, int type, const ut8 *buf, int size) {
 	int r = -1;
 	switch (type) {
-		case R_REG_TYPE_GPR:
-			r = ptrace (PT_SETREGS, dbg->pid,
-				(caddr_t)buf, sizeof (struct reg));
-			break;
-		case R_REG_TYPE_DRX:
+	case R_REG_TYPE_GPR:
+		r = ptrace (PT_SETREGS, dbg->pid,
+			(caddr_t)buf, sizeof (struct reg));
+		break;
+	case R_REG_TYPE_DRX:
 #if __KFBSD__ || __NetBSD__
 #ifdef PT_SETDBREGS
-			r = ptrace (PT_SETDBREGS, dbg->pid, (caddr_t)buf, sizeof (struct dbreg));
+		r = ptrace (PT_SETDBREGS, dbg->pid, (caddr_t)buf, sizeof (struct dbreg));
 #endif
 #endif
-			break;
-		case R_REG_TYPE_FPU:
-			r = ptrace (PT_SETFPREGS, dbg->pid, (caddr_t)buf, sizeof (struct fpreg));
-			break;
+		break;
+	case R_REG_TYPE_FPU:
+	case R_REG_TYPE_VEC64: // MMX
+		r = ptrace (PT_SETFPREGS, dbg->pid, (caddr_t)buf, sizeof (struct fpreg));
+		break;
+	case R_REG_TYPE_VEC128: // XMM
+	case R_REG_TYPE_VEC256: // YMM
+	case R_REG_TYPE_VEC512: // ZMM
+#if __KFBSD__
+		struct ptrace_xstate_info info;
+		r = ptrace (PT_GETXSTATE_INFO, dbg->pid, (caddr_t)&info, sizeof (info));
+		if (info.xsave_len != 0) {
+			r = ptrace (PT_SETXSTATE, dbg->pid,  (caddr_t)buf, info.xsave_len);
+		}
+#endif
+	      break;
 	}
 	return r == 0;
 }
@@ -190,18 +202,18 @@ RDebugInfo *bsd_info(RDebug *dbg, const char *arg) {
 		rdi->exe = strdup (kp->p_comm);
 
 		switch (kp->p_stat) {
-			case SDEAD:
-				rdi->status = R_DBG_PROC_DEAD;
-				break;
-			case SSTOP:
-				rdi->status = R_DBG_PROC_STOP;
-				break;
-			case SSLEEP:
-				rdi->status = R_DBG_PROC_SLEEP;
-				break;
-			default:
-				rdi->status = R_DBG_PROC_RUN;
-				break;
+		case SDEAD:
+			rdi->status = R_DBG_PROC_DEAD;
+			break;
+		case SSTOP:
+			rdi->status = R_DBG_PROC_STOP;
+			break;
+		case SSLEEP:
+			rdi->status = R_DBG_PROC_SLEEP;
+			break;
+		default:
+			rdi->status = R_DBG_PROC_RUN;
+			break;
 		}
 	}
 
@@ -230,26 +242,24 @@ RDebugInfo *bsd_info(RDebug *dbg, const char *arg) {
 		rdi->uid = kp->p_uid;
 		rdi->gid = kp->p__pgid;
 		rdi->exe = strdup (kp->p_comm);
-
 		rdi->status = R_DBG_PROC_STOP;
-
 		switch (kp->p_stat) {
-			case SDEAD:
-				rdi->status = R_DBG_PROC_DEAD;
-				break;
-			case SSTOP:
-				rdi->status = R_DBG_PROC_STOP;
-				break;
-			case SZOMB:
-				rdi->status = R_DBG_PROC_ZOMBIE;
-				break;
-			case SACTIVE:
-			case SIDL:
-			case SDYING:
-				rdi->status = R_DBG_PROC_RUN;
-				break;
-			default:
-				rdi->status = R_DBG_PROC_SLEEP;
+		case SDEAD:
+			rdi->status = R_DBG_PROC_DEAD;
+			break;
+		case SSTOP:
+			rdi->status = R_DBG_PROC_STOP;
+			break;
+		case SZOMB:
+			rdi->status = R_DBG_PROC_ZOMBIE;
+			break;
+		case SACTIVE:
+		case SIDL:
+		case SDYING:
+			rdi->status = R_DBG_PROC_RUN;
+			break;
+		default:
+			rdi->status = R_DBG_PROC_SLEEP;
 		}
 	}
 
@@ -555,7 +565,7 @@ RList *bsd_thread_list(RDebug *dbg, int pid, RList *list) {
 	}
 
 	len += sizeof (*kp) + len / 10;
-	kp = malloc(len);
+	kp = malloc (len);
 	if (sysctl (mib, 4, kp, &len, NULL, 0) == -1) {
 		free (kp);
 		r_list_free (list);
@@ -576,7 +586,7 @@ RList *bsd_thread_list(RDebug *dbg, int pid, RList *list) {
 	free (kp);
 	return list;
 #else
-	eprintf ("bsd_thread_list unsupported on this platform\n");
+	R_LOG_ERROR ("bsd_thread_list unsupported on this platform");
 	r_list_free (list);
 	return NULL;
 #endif

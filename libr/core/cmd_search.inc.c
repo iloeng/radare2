@@ -117,9 +117,7 @@ static RCoreHelpMessage help_msg_slash = {
 	"/V", "[1248] min max", "look for an `cfg.bigendian` 32bit value in range",
 	"/w", " foo", "search for wide string 'f\\0o\\0o\\0'",
 	"/wi", " foo", "search for wide string ignoring case 'f\\0o\\0o\\0'",
-	"/x", " ff..33", "search for hex string ignoring some nibbles",
-	"/x", " ff0033", "search for hex string",
-	"/x", " ff43:ffd0", "search for hexpair with mask",
+	"/x", "[?] [bytes]", "search for hex string with mask, ignoring some nibbles",
 	"/z", " min max", "search for strings of given size",
 	"/*", " [comment string]", "add multiline comment, end it with '*/'",
 #if 0
@@ -223,13 +221,14 @@ static RCoreHelpMessage help_msg_slash_Rk = {
 };
 
 static RCoreHelpMessage help_msg_slash_x = {
-	"Usage:", "/x [hexpairs]:[binmask]", "search in memory",
+	"Usage:", "/x[v] [hexpairs]:[binmask]", "search in memory",
 	"/x ", "9090cd80", "search for those bytes",
 	"/x ", "ff..33", "search for hex string ignoring some nibbles",
 	"/x ", "9090cd80:ffff7ff0", "search with binary mask",
+	"/xn", "[1|2|4|8] value amount", "search for an array of Value repeated Amount of times",
+	"/xv", "[1|2|4|8] v0 v1 v2 v3 ..", "search for an array of values with given size and endian",
 	NULL
 };
-
 
 struct search_parameters {
 	RCore *core;
@@ -812,8 +811,8 @@ R_API RList *r_core_get_boundaries_prot(RCore *core, R_UNUSED int perm, const ch
 	snprintf (bound_in, sizeof (bound_in), "%s.%s", prefix, "in");
 	snprintf (bound_from, sizeof (bound_from), "%s.%s", prefix, "from");
 	snprintf (bound_to, sizeof (bound_to), "%s.%s", prefix, "to");
-	const ut64 search_from = r_config_get_i (core->config, bound_from),
-	      search_to = r_config_get_i (core->config, bound_to);
+	const ut64 search_from = r_config_get_i (core->config, bound_from);
+	const ut64 search_to = r_config_get_i (core->config, bound_to);
 	const RInterval search_itv = {search_from, search_to - search_from};
 	if (!mode) {
 		mode = r_config_get (core->config, bound_in);
@@ -1287,7 +1286,7 @@ static RList *construct_rop_gadget(RCore *core, ut64 addr, ut8 *buf, int buflen,
 			r_anal_op_fini (&asmop);
 		}
 		if (!r_str_ncasecmp (opst, "invalid", strlen ("invalid")) ||
-		    !r_str_ncasecmp (opst, ".byte", strlen (".byte"))) {
+			!r_str_ncasecmp (opst, ".byte", strlen (".byte"))) {
 			valid = false;
 			goto ret;
 		}
@@ -1636,7 +1635,7 @@ static int r_core_search_rop(RCore *core, RInterval search_itv, int opt, const c
 			RAnalOp end_gadget = {0};
 			// Disassemble one.
 			if (r_anal_op (core->anal, &end_gadget, from + i, buf + i,
-				    delta - i, R_ARCH_OP_MASK_BASIC) < 1) {
+					delta - i, R_ARCH_OP_MASK_BASIC) < 1) {
 				r_anal_op_fini (&end_gadget);
 				continue;
 			}
@@ -2421,16 +2420,19 @@ static void search_hit_at(RCore *core, struct search_parameters *param, RCoreAsm
 	}
 	if (param->searchflags) {
 		if (R_STR_ISNOTEMPTY (str)) {
+			// TODO: use the api instead
 			char *s = r_str_newf ("string \"%s\"", str);
 			r_core_cmdf (core, "'0x%08"PFMT64x"'CC %s", hit->addr, s);
 			free (s);
 		}
-		char *flagname = (R_STR_ISNOTEMPTY (str)) // XXX i think hit->code is not used anywhere
-			? r_str_newf ("asm.str.%d_%s_%d", kwidx, str, param->count)
-			: r_str_newf ("%s%d_%d", param->searchprefix, kwidx, param->count);
-		if (flagname) {
-			r_flag_set (core->flags, flagname, hit->addr, hit->len);
-			free (flagname);
+		if (param->outmode != R_MODE_SIMPLE) {
+			char *flagname = (R_STR_ISNOTEMPTY (str)) // XXX i think hit->code is not used anywhere
+				? r_str_newf ("asm.str.%d_%s_%d", kwidx, str, param->count)
+				: r_str_newf ("%s%d_%d", param->searchprefix, kwidx, param->count);
+			if (flagname) {
+				r_flag_set (core->flags, flagname, hit->addr, hit->len);
+				free (flagname);
+			}
 		}
 	}
 }
@@ -3028,9 +3030,7 @@ static bool do_anal_search(RCore *core, struct search_parameters *param, const c
 					}
 					R_FREE (opstr);
 					if (*input && param->searchflags) {
-						char flag[64];
-						snprintf (flag, sizeof (flag), "%s%d_%d",
-							param->searchprefix, kwidx, count);
+						r_strf_var (flag, 64, "%s%d_%d", param->searchprefix, kwidx, count);
 						r_flag_set (core->flags, flag, at, ret);
 					}
 					if (*param->cmd_hit) {
@@ -3186,7 +3186,7 @@ static void do_asm_search(RCore *core, struct search_parameters *param, const ch
 		if (maxhits && count >= maxhits) {
 			break;
 		}
-		RList *hits; hits = r_core_asm_strsearch (core, end_cmd, from, to, maxhits, regexp, everyByte, mode);
+		RList *hits = r_core_asm_strsearch (core, end_cmd, from, to, maxhits, regexp, everyByte, mode);
 		if (hits) {
 			r_list_foreach (hits, iter, hit) {
 				if (r_cons_is_breaked ()) {
@@ -3770,6 +3770,131 @@ static void __core_cmd_search_asm_infinite(RCore *core, const char *arg) {
 	r_cons_break_pop ();
 }
 
+static void cmd_search_xn(RCore *core, const char *input) {
+	if (strchr (input, '?')) {
+		r_core_cmd_help_match (core, help_msg_slash_x, "/xn");
+		return;
+	}
+	char sizeChar = input[2];
+	bool be = r_config_get_b (core->config, "cfg.bigendian");
+	const char *arg = r_str_trim_head_ro (input + 3);
+	int size = isdigit (sizeChar)? sizeChar - '0': 1;
+	if (size != 1 && size != 2 && size != 4 && size != 8) {
+		R_LOG_ERROR ("Invalid value size. Must be 1, 2, 4 or 8");
+		return;
+	}
+	char *args = strdup (arg);
+	char *arg1 = strchr (args, ' ');
+	if (arg1) {
+		*arg1++ = 0;
+	} else {
+		R_LOG_ERROR ("Usage: /xn [value] [amount]");
+		free (args);
+		return;
+	}
+	int amount = r_num_math (core->num, arg1);
+	if (amount < 1) {
+		R_LOG_ERROR ("Usage: /xn [value] [amount]");
+		free (args);
+		return;
+	}
+	ut8 b[8];
+	RStrBuf *sb = r_strbuf_new ("");
+	ut64 v = r_num_math (core->num, args);
+	int i;
+	for (i = 0; i < amount; i++) {
+		switch (size) {
+		case 1:
+			if (v > 0xff) {
+				R_LOG_WARN ("Invalid byte value %"PFMT64d, v);
+			}
+			r_strbuf_appendf (sb, "%02x", (ut8)(v & 0xff));
+			break;
+		case 2:
+			r_write_ble16 (b, v, be);
+			if (v > UT16_MAX) {
+				R_LOG_WARN ("Invalid word value %"PFMT64d, v);
+			}
+			r_strbuf_appendf (sb, "%02x%02x", b[0], b[1]);
+			break;
+		case 4:
+			r_write_ble32 (b, v, be);
+			if (v > UT32_MAX) {
+				R_LOG_WARN ("Invalid dword value %"PFMT64d, v);
+			}
+			r_strbuf_appendf (sb, "%02x%02x%02x%02x", b[0], b[1], b[2], b[3]);
+			break;
+		case 8:
+			r_write_ble64 (b, v, be);
+			r_strbuf_appendf (sb, "%02x%02x%02x%02x", b[0], b[1], b[2], b[3]);
+			r_strbuf_appendf (sb, "%02x%02x%02x%02x", b[4], b[5], b[6], b[7]);
+			break;
+		}
+	}
+	free (args);
+	char *s = r_strbuf_drain (sb);
+	core->in_search = false;
+	r_core_cmdf (core, "/x %s", s);
+	free (s);
+}
+
+static void cmd_search_xv(RCore *core, const char *input) {
+	if (strchr (input, '?')) {
+		r_core_cmd_help_match (core, help_msg_slash_x, "/xv");
+		return;
+	}
+	char sizeChar = input[2];
+	bool be = r_config_get_b (core->config, "cfg.bigendian");
+	const char *arg = r_str_trim_head_ro (input + 3);
+	int size = isdigit (sizeChar)? sizeChar - '0': 1;
+	if (size != 1 && size != 2 && size != 4 && size != 8) {
+		R_LOG_ERROR ("Invalid value size. Must be 1, 2, 4 or 8");
+		return;
+	}
+	char *args = strdup (arg);
+	RList *list = r_str_split_list (args, " ", 0);
+	RListIter *iter;
+	const char *str;
+	ut8 b[8];
+	RStrBuf *sb = r_strbuf_new ("");
+	r_list_foreach (list, iter, str) {
+		ut64 v = r_num_math (core->num, str);
+		switch (size) {
+		case 1:
+			if (v > 0xff) {
+				R_LOG_WARN ("Invalid byte value %"PFMT64d, v);
+			}
+			r_strbuf_appendf (sb, "%02x", (ut8)(v & 0xff));
+			break;
+		case 2:
+			r_write_ble16 (b, v, be);
+			if (v > UT16_MAX) {
+				R_LOG_WARN ("Invalid word value %"PFMT64d, v);
+			}
+			r_strbuf_appendf (sb, "%02x%02x", b[0], b[1]);
+			break;
+		case 4:
+			r_write_ble32 (b, v, be);
+			if (v > UT32_MAX) {
+				R_LOG_WARN ("Invalid dword value %"PFMT64d, v);
+			}
+			r_strbuf_appendf (sb, "%02x%02x%02x%02x", b[0], b[1], b[2], b[3]);
+			break;
+		case 8:
+			r_write_ble64 (b, v, be);
+			r_strbuf_appendf (sb, "%02x%02x%02x%02x", b[0], b[1], b[2], b[3]);
+			r_strbuf_appendf (sb, "%02x%02x%02x%02x", b[4], b[5], b[6], b[7]);
+			break;
+		}
+	}
+	free (args);
+	r_list_free (list);
+	char *s = r_strbuf_drain (sb);
+	core->in_search = false;
+	r_core_cmdf (core, "/x %s", s);
+	free (s);
+}
+
 static void __core_cmd_search_backward_prelude(RCore *core, bool doseek, bool forward) {
 	RList *preds = r_anal_preludes (core->anal);
 	int bs = core->blocksize;
@@ -4016,8 +4141,8 @@ static int cmd_search(void *data, const char *input) {
 	   this introduces a bug until we implement backwards search
 	   for all search types
 	   if (__to < __from) {
-	        eprintf ("Invalid search range. Check 'e search.{from|to}'\n");
-	        return false;
+			eprintf ("Invalid search range. Check 'e search.{from|to}'\n");
+			return false;
 	   }
 	   since the backward search will be implemented soon I'm not gonna stick
 	   checks for every case in switch // jjdredd
@@ -4337,9 +4462,11 @@ reread:
 				do_analstr_search (core, &param, true, r_str_trim_head_ro (input + 3));
 				break;
 			case 's': // "/azs"
+				param.outmode = R_MODE_SIMPLE;
 				do_analstr_search (core, &param, true, NULL);
 				break;
 			case 'j': // "/azj"
+				param.outmode = R_MODE_JSON;
 				do_analstr_search (core, &param, false, NULL);
 				break;
 			case ' ': // "/az [num]"
@@ -4451,19 +4578,25 @@ reread:
 			break;
 		case 'd': // "/cd"
 			{
-				RSearchKeyword *kw;
-				if (input[2] == 'j') {
-					param.outmode = R_MODE_JSON;
-				}
-				kw = r_search_keyword_new_hex ("308200003082", "ffff0000ffff", NULL);
-				r_search_reset (core->search, R_SEARCH_KEYWORD);
-				if (kw) {
-					r_search_kw_add (core->search, kw);
-					r_search_begin (core->search);
-				} else {
-					R_LOG_ERROR ("invalid pointer");
-					dosearch = false;
-				}
+			RSearchKeyword *kw_1, *kw_2, *kw_3;
+			if (input[2] == 'j') {
+				param.outmode = R_MODE_JSON;
+			}
+			// Certificate with version number
+			kw_1 = r_search_keyword_new_hex ("30820000308100A0030201", "ffff0000ffff00ffffffff", NULL);
+			kw_2 = r_search_keyword_new_hex ("3082000030820000A0030201", "ffff0000ffff0000ffffffff", NULL);
+			// Certificate with serial number
+			kw_3 = r_search_keyword_new_hex ("308200003082000002", "ffff0000ffff0000ff", NULL);
+			r_search_reset (core->search, R_SEARCH_KEYWORD);
+			if (kw_1 && kw_2 && kw_3) {
+				r_search_kw_add (core->search, kw_1);
+				r_search_kw_add (core->search, kw_2);
+				r_search_kw_add (core->search, kw_3);
+				r_search_begin (core->search);
+			} else {
+				R_LOG_ERROR ("invalid pointer");
+				dosearch = false;
+			}
 			}
 			break;
 		case 'g': // "/cg"
@@ -4566,39 +4699,48 @@ reread:
 		case 'p': // "/cp"
 			{
 				RSearchKeyword *kw;
+				if (input[2] == 'j') {
+					param.outmode = R_MODE_JSON;
+				}
 				char *space = strchr (input, ' ');
 				const char *arg = space? r_str_trim_head_ro (space + 1): NULL;
 				if (!arg || *(space - 1) == '?') {
 					r_core_cmd_help_match (core, help_msg_slash_c, "/cp");
 					goto beach;
-				}
+				} else {
+					char *p = strchr (arg, ' ');
+					if (p) {
+						*p++ = 0;
+					} else {
+						r_core_cmd_help_match (core, help_msg_slash_c, "/cp");
+						goto beach;
+					}
 
-				char *pubkey = strdup (r_str_trim_head_ro (strchr (arg, ' ')));
-				char *algo = strdup (arg);
-				r_str_split (algo, ' ');
-				if (input[2] == 'j') {
-					param.outmode = R_MODE_JSON;
+					char *algo = strdup (arg);
+					char *pubkey = strdup (r_str_trim_head_ro (p));
+					if (!strcmp (algo, "ed25519")) {
+						r_search_reset (core->search, R_SEARCH_RAW_PRIV_KEY);
+					} else {
+						R_LOG_ERROR ("Unsupported signature: %s", arg);
+						goto beach;
+					}
+
+					if (strlen (pubkey) == ED25519_PUBKEY_LENGTH) {
+						core->search->data = (void *)pubkey;
+					} else {
+						R_LOG_ERROR ("Wrong key length");
+						goto beach;
+					}
+
+					kw = r_search_keyword_new_hexmask ("00", NULL);
+					// Private key search is at least 32 bytes
+					kw->keyword_length = RAW_PRIVATE_KEY_SEARCH_LENGTH;
+					r_search_kw_add (search, kw);
+					r_search_begin (core->search);
+					param.key_search = true;
+					free (algo);
+					break;
 				}
-				if (!strcmp (algo, "ed25519")) {
-					r_search_reset (core->search, R_SEARCH_RAW_PRIV_KEY);
-				} else {
-					R_LOG_ERROR ("Unsupported signature: %s", arg);
-					goto beach;
-				}
-				if (strlen (pubkey) == ED25519_PUBKEY_LENGTH) {
-					core->search->data = (void *)pubkey;
-				} else {
-					R_LOG_ERROR ("Wrong key length");
-					goto beach;
-				}
-				kw = r_search_keyword_new_hexmask ("00", NULL);
-				// Private key search is at least 32 bytes
-				kw->keyword_length = RAW_PRIVATE_KEY_SEARCH_LENGTH;
-				r_search_kw_add (search, kw);
-				r_search_begin (core->search);
-				param.key_search = true;
-				free (algo);
-				break;
 			}
 		default: {
 			dosearch = false;
@@ -5085,6 +5227,10 @@ reread:
 	case 'x': // "/x" search hex
 		if (input[1] == '?') {
 			r_core_cmd_help (core, help_msg_slash_x);
+		} else if (input[1] == 'n') {
+			cmd_search_xn (core, input);
+		} else if (input[1] == 'v') {
+			cmd_search_xv (core, input);
 		} else {
 			RSearchKeyword *kw;
 			char *s, *p = strdup (input + param_offset);

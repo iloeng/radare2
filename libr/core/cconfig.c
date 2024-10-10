@@ -597,6 +597,19 @@ static bool cb_asmsubsec(void *user, void *data) {
 	return true;
 }
 
+static bool cb_asm_var_summary(void *user, void *data) {
+	RConfigNode *node = (RConfigNode *) data;
+	if (*node->value == '?') {
+		r_cons_printf ("0 # same as afv output\n");
+		r_cons_printf ("1 # simplified args+vars list\n");
+		r_cons_printf ("2 # short summary\n");
+		r_cons_printf ("3 # compact oneliner for args + vars\n");
+		r_cons_printf ("4 # compact oneliner with args+vars regs+mem range\n");
+		return false;
+	}
+	return true;
+}
+
 static bool cb_asmassembler(void *user, void *data) {
 	RCore *core = (RCore *) user;
 	RConfigNode *node = (RConfigNode *) data;
@@ -1599,10 +1612,18 @@ static bool cb_color_getter(void *user, RConfigNode *node) {
 }
 
 static bool cb_reloff(void *user, void *data) {
-	// RCore *core = (RCore *) user;
+	const char options[] = "func\nflag\nmaps\ndmap\nfmap\nsect\nsymb\nlibs\nfile\n";
 	RConfigNode *node = (RConfigNode *) data;
-	if (strchr (node->value, '?')) {
-		r_cons_printf ("func\nflag\nmaps\ndmap\nfmap\nsect\nsymb\nlibs\nfile\n");
+	if (*node->value) {
+		char *pos = strstr (options, node->value);
+		if (pos && pos[strlen (node->value)] == '\n') {
+			return true;
+		}
+		if (strchr (node->value, '?')) {
+			r_cons_printf (options);
+		} else {
+			R_LOG_ERROR ("Invalid value, try `-e asm.offset.relto=?`");
+		}
 		return false;
 	}
 	return true;
@@ -2440,6 +2461,20 @@ static bool cb_scrfgets(void* user, void* data) {
 	return true;
 }
 
+static bool cb_scrcss(void *user, void *data) {
+	RConfigNode *node = (RConfigNode*) data;
+	if (node->i_value) {
+		R_LOG_TODO ("Not implemented");
+		return false;
+	}
+	return true;
+}
+
+static bool cb_scrcss_prefix(void *user, void *data) {
+	// do nothing for now
+	return true;
+}
+
 static bool cb_scrhtml(void *user, void *data) {
 	RConfigNode *node = (RConfigNode *) data;
 	r_cons_context ()->was_html = r_cons_context ()->is_html;
@@ -2528,13 +2563,11 @@ static bool cb_scrstrconv(void *user, void *data) {
 	if (*node->value == '?') {
 		if (strlen (node->value) > 1 && node->value[1] == '?') {
 			r_cons_printf ("Valid values for scr.strconv:\n"
-				"  asciiesc  convert to ascii with non-ascii chars escaped\n"
-				"  asciidot  convert to ascii with non-ascii chars turned into a dot (except control chars stated below)\n"
-				"\n"
-				"Ascii chars are in the range 0x20-0x7e. Always escaped control chars are alert (\\a),\n"
-				"backspace (\\b), formfeed (\\f), newline (\\n), carriage return (\\r), horizontal tab (\\t)\n"
-				"and vertical tab (\\v). Also, double quotes (\\\") are always escaped, but backslashes (\\\\)\n"
-				"are only escaped if str.escbslash = true.\n");
+				"  asciiesc  convert to ascii with non-ascii chars escaped (see str.escbslash)\n"
+				"  asciidot  non-printable chars are represented with a dot\n"
+				"  pascal    takes the first byte as the length for the string\n"
+				"  raw       perform no conversion from non-ascii chars\n"
+			);
 		} else {
 			print_node_options (node);
 		}
@@ -3746,7 +3779,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("asm.var", "true", "show local function variables in disassembly");
 	SETBPREF ("asm.var.access", "false", "show accesses of local variables");
 	SETBPREF ("asm.sub.var", "true", "substitute variables in disassembly");
-	SETI ("asm.var.summary", 0, "show variables summary instead of full list in disasm (0, 1, 2)");
+	SETICB ("asm.var.summary", 4, &cb_asm_var_summary, "show variables summary instead of full list in disasm (0, 1, 2, 3, 4)");
 	SETBPREF ("asm.sub.varonly", "true", "substitute the entire variable expression with the local variable name (e.g. [local10h] instead of [ebp+local10h])");
 	SETBPREF ("asm.sub.reg", "false", "substitute register names with their associated role name (drp~=)");
 	SETBPREF ("asm.sub.rel", "true", "substitute pc relative expressions in disasm");
@@ -3821,7 +3854,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("bin.demangle", "true", "import demangled symbols from RBin");
 	SETCB("bin.demangle.trylib", "false", &cb_demangle_trylib, "try to use system available libraries to demangle");
 	SETCB ("bin.demangle.usecmd", "false", &cb_bdc, "run xcrun swift-demangle and similar if available (SLOW) (see bin.demangle.trylib)");
-	SETBPREF ("bin.demangle.libs", "false", "show library name on demangled symbols names");
+	SETBPREF ("bin.demangle.pfxlib", "false", "show library name on demangled symbols names");
 	SETI ("bin.baddr", -1, "base address of the binary");
 	SETI ("bin.laddr", 0, "base address for loading library ('*.so')");
 	SETCB ("bin.dbginfo", "true", &cb_bindbginfo, "load debug information at startup if available");
@@ -3986,6 +4019,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETPREF ("cmd.usr2", "", "run when SIGUSR2 signal is received");
 #endif
 	SETPREF ("cmd.open", "", "run when file is opened");
+	SETPREF ("cmd.exit", "", "run command before leaving the shell (atexit)");
 	SETPREF ("cmd.load", "", "run when binary is loaded");
 	SETPREF ("cmd.bbgraph", "", "show the output of this command in the graph basic blocks");
 	RConfigNode *cmdpdc = NODECB ("cmd.pdc", "", &cb_cmdpdc);
@@ -4015,7 +4049,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETCB ("dbg.wrap", "false", &cb_dbg_wrap, "enable the ptrace-wrap abstraction layer (needed for debugging from iaito)");
 	SETCB ("dbg.libs", "", &cb_dbg_libs, "If set stop when loading matching libname");
 	SETBPREF ("dbg.skipover", "false", "make dso perform a dss (same goes for esil and visual/graph");
-#if __APPLE__
+#if __APPLE__ && __x86_64__
 	SETBPREF ("dbg.hwbp", "true", "use hardware breakpoints instead of software ones when enabled");
 #else
 	SETBPREF ("dbg.hwbp", "false", "use hardware breakpoints instead of software ones when enabled");
@@ -4315,6 +4349,8 @@ R_API int r_core_config_init(RCore *core) {
 	SETCB ("scr.bgfill", "false", &cb_scr_bgfill, "fill background for ascii art when possible");
 	SETI ("scr.feedback", 1, "set visual feedback level (1=arrow on jump, 2=every key (useful for videos))");
 	SETCB ("scr.html", "false", &cb_scrhtml, "disassembly uses HTML syntax");
+	SETCB ("scr.css", "false", &cb_scrcss, "make scr.html use css instead of hardcoded colors (TODO)");
+	SETCB ("scr.css.prefix", "", &cb_scrcss_prefix, "hardcoded prefix for the css output (see ecc command)");
 	n = NODECB ("scr.nkey", "flag", &cb_scrnkey);
 	SETDESC (n, "select visual seek mode (affects n/N visual commands)");
 	SETOPTIONS (n, "fun", "hit", "flag", NULL);
@@ -4341,7 +4377,7 @@ R_API int r_core_config_init(RCore *core) {
 	SETBPREF ("scr.color.args", "true", "colorize arguments and variables of functions");
 	SETBPREF ("scr.color.bytes", "true", "colorize bytes that represent the opcodes of the instruction");
 	SETCB ("scr.null", "false", &cb_scrnull, "show no output");
-	SETCB ("scr.utf8", r_str_bool (r_cons_is_utf8()), &cb_utf8, "show UTF-8 characters instead of ANSI");
+	SETCB ("scr.utf8", r_str_bool (r_cons_is_utf8 ()), &cb_utf8, "show UTF-8 characters instead of ANSI");
 	SETCB ("scr.utf8.curvy", "false", &cb_utf8_curvy, "show curved UTF-8 corners (requires scr.utf8)");
 	SETCB ("scr.demo", "false", &cb_scr_demo, "use demoscene effects if available");
 	SETPREF ("scr.analbar", "false", "show progressbar for aaa instead of logging what its doing");
@@ -4352,15 +4388,15 @@ R_API int r_core_config_init(RCore *core) {
 #else
 	SETBPREF ("scr.hist.save", "true", "always save history on exit");
 #endif
-	SETICB("scr.hist.size", R_LINE_HISTSIZE, &cb_scr_histsize, "set input lines history size");
-	n = NODECB ("scr.strconv", "asciiesc", &cb_scrstrconv);
+	SETICB ("scr.hist.size", R_LINE_HISTSIZE, &cb_scr_histsize, "set input lines history size");
+	n = NODECB ("scr.strconv", "asciiesc", &cb_scrstrconv); // TODO: move this into asm. or sthg else?
 	SETDESC (n, "convert string before display");
-	SETOPTIONS (n, "asciiesc", "asciidot", NULL);
+	SETOPTIONS (n, "asciiesc", "asciidot", "raw", "pascal", NULL); // TODO: add ebcdic here and other charset plugins here!!
 	SETBPREF ("scr.confirmquit", "false", "Confirm on quit");
 	SETBPREF ("scr.progressbar", "false", "display a progress bar when running scripts.");
 
 	/* str */
-	SETCB ("str.escbslash", "false", &cb_str_escbslash, "escape the backslash");
+	SETCB ("str.escbslash", "false", &cb_str_escbslash, "escape the backslash"); // XXX this is the only var starting with 'str.'
 
 	/* search */
 	SETCB ("search.contiguous", "true", &cb_contiguous, "accept contiguous/adjacent search hits");
@@ -4414,6 +4450,9 @@ R_API int r_core_config_init(RCore *core) {
 	SETICB ("io.0xff", 0xff, &cb_io_oxff, "use this value instead of 0xff to fill unallocated areas");
 	SETCB ("io.aslr", "false", &cb_ioaslr, "disable ASLR for spawn and such");
 	SETCB ("io.va", "true", &cb_iova, "use virtual address layout");
+	SETBPREF ("io.voidwrites", "true",
+		"handle writes to fully unmapped areas as valid operations (requires io.va to be set)");
+	SETI ("io.mapinc", 0x10000000, "increment map address when overlap with r_io_map_locate");
 	SETCB ("io.pava", "false", &cb_io_pava, "use EXPERIMENTAL paddr -> vaddr address mode");
 	SETCB ("io.autofd", "true", &cb_ioautofd, "change fd when opening a new file");
 	SETCB ("io.unalloc", "false", &cb_io_unalloc, "check each byte if it's allocated");

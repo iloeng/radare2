@@ -51,14 +51,16 @@ R_API char *r_cons_html_filter(const char *ptr, int *newlen) {
 	for (; ptr[0]; ptr++) {
 		if (esc == 0 && ptr[0] != 0x1b && need_to_set) {
 			if (has_set) {
-				r_strbuf_append (res, "</font>");
+				r_strbuf_append (res, "</span>");
 				has_set = false;
 			}
 			if (!need_to_clear) {
 				first_style = true;
-				r_strbuf_append (res, "<font");
+				r_strbuf_append (res, "<span");
 				if (text_color[0]) {
-					r_strbuf_appendf (res, " color='%s'", text_color);
+					r_strbuf_append (res, first_style? " style='": ";");
+					r_strbuf_appendf (res, "color:%s", text_color);
+					first_style = false;
 				}
 				if (background_color[0]) {
 					r_strbuf_append (res, first_style? " style='": ";");
@@ -157,7 +159,7 @@ R_API char *r_cons_html_filter(const char *ptr, int *newlen) {
 				esc = 0;
 				str = ptr;
 				continue;
-			} else if (IS_DIGIT (ptr[0]) && ptr[1] == ';' && IS_DIGIT (ptr[2])) {
+			} else if (isdigit (ptr[0]) && ptr[1] == ';' && isdigit (ptr[2])) {
 				char *m = strchr (ptr, 'm');
 				if (m) {
 					gethtmlrgb (ptr, background_color, sizeof (background_color));
@@ -166,7 +168,7 @@ R_API char *r_cons_html_filter(const char *ptr, int *newlen) {
 					str = ptr + 1;
 					esc = 0;
 				}
-			} else if (IS_DIGIT (ptr[0]) && IS_DIGIT (ptr[1]) && ptr[2] == ';') {
+			} else if (isdigit (ptr[0]) && isdigit (ptr[1]) && ptr[2] == ';') {
 				char *m = strchr (ptr, 'm');
 				if (m) {
 					gethtmlrgb (ptr, text_color, sizeof (text_color));
@@ -191,7 +193,7 @@ R_API char *r_cons_html_filter(const char *ptr, int *newlen) {
 					str = ptr + 1;
 				}
 				esc = 0;
-			} else if ((ptr[0] == '0' || ptr[0] == '1') && ptr[1] == ';' && IS_DIGIT (ptr[2])) {
+			} else if ((ptr[0] == '0' || ptr[0] == '1') && ptr[1] == ';' && isdigit (ptr[2])) {
 				// bg color is kind of ignored, but no glitch so far
 				r_cons_gotoxy (0, 0);
 				ptr += 4;
@@ -251,7 +253,7 @@ R_API char *r_cons_html_filter(const char *ptr, int *newlen) {
 		r_strbuf_append_n (res, str, ptr - str);
 	}
 	if (has_set) {
-		r_strbuf_append (res, "</font>");
+		r_strbuf_append (res, "</span>");
 	}
 	if (newlen) {
 		*newlen = res->len;

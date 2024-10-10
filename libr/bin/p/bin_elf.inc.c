@@ -489,7 +489,7 @@ static RBinReloc *reloc_convert(ELFOBJ* eo, RBinElfReloc *rel, ut64 got_addr) {
 	r->laddr = rel->laddr;
 
 	#define SET(T) r->type = R_BIN_RELOC_ ## T; r->additive = 0; return r
-	#define ADD(T, A) r->type = R_BIN_RELOC_ ## T; r->addend += A; r->additive = rel->mode == DT_RELA; return r
+	#define ADD(T, A) r->type = R_BIN_RELOC_ ## T; if (!ST32_ADD_OVFCHK (r->addend, A)) { r->addend += A; } r->additive = rel->mode == DT_RELA; return r
 
 	switch (eo->ehdr.e_machine) {
 	case EM_S390:
@@ -1088,6 +1088,7 @@ static void lookup_symbols(RBinFile *bf, RBinInfo *ret) {
 	RVecRBinSymbol* symbols = &bf->bo->symbols_vec;
 	RBinSymbol *symbol;
 	bool is_rust = false;
+	bool is_dart = false;
 	if (symbols) {
 		R_VEC_FOREACH (symbols, symbol) {
 			if (ret->has_canary && is_rust) {
@@ -1105,6 +1106,9 @@ static void lookup_symbols(RBinFile *bf, RBinInfo *ret) {
 			if (!is_rust && !strcmp (oname, "__rust_oom")) {
 				is_rust = true;
 				ret->lang = "rust";
+			} else if (!is_dart && !strcmp (oname, "_kDartVmSnapshotInstructions")) {
+				is_dart = true;
+				ret->lang = "dart";
 			}
 		}
 		// symbols->free = r_bin_symbol_free;

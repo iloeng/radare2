@@ -1,4 +1,4 @@
-/* radare - LGPL - Copyright 2009-2023 - pancake, oddcoder, Anton Kochkov, Jody Frankowski */
+/* radare - LGPL - Copyright 2009-2024 - pancake, oddcoder, Anton Kochkov, Jody Frankowski */
 
 #if R_INCLUDE_BEGIN
 
@@ -99,12 +99,13 @@ static RCoreHelpMessage help_msg_te = {
 	"te", " <enum>", "print all values of enum for given name",
 	"te", " <enum> <value>", "show name for given enum number",
 	"te-", "<enum>", "delete enum type definition",
-	"tej", "", "list all loaded enums in json",
-	"tej", " <enum>", "show enum in json",
 	"teb", " <enum> <name>", "show matching enum bitfield for given name",
 	"tec", "", "list all loaded enums in C output format with newlines",
 	"tec", " <name>", "list given loaded enums in C output format with newlines",
 	"ted", "", "list all loaded enums in C output format without newlines",
+	"tej", "", "list all loaded enums in json",
+	"tej", " <enum>", "show enum in json",
+	"test", " [-x,f,d] [path]", "test if executable, file or directory exists",
 	NULL
 };
 
@@ -766,7 +767,7 @@ static bool print_link_readable_cb(void *p, const char *k, const char *v) {
 	RCore *core = (RCore *)p;
 	char *fmt = r_type_format (core->anal->sdb_types, v);
 	if (!fmt) {
-		eprintf ("Can't find type %s\n", v);
+		R_LOG_ERROR ("Can't find type %s", v);
 		return 1;
 	}
 	r_cons_printf ("(%s)\n", v);
@@ -1092,6 +1093,42 @@ beach:
 	free (buf);
 }
 
+static void test_flag(RCore *core, bool res) {
+	r_core_return_value (core, res? 0: 1);
+}
+
+static int cmd_test(RCore *core, const char *input) {
+	int type = 'f';
+	if (*input == '-') {
+		type = input[1];
+	}
+	const char *arg = strchr (input, ' ');
+	if (arg) {
+		arg = r_str_trim_head_ro (arg + 1);
+	} else {
+		R_LOG_ERROR ("Missing file argument. Use 'test -fdx [file]'");
+		return 1;
+	}
+	switch (type) {
+	case 'f': // "test -f"
+		test_flag (core, r_file_exists (arg));
+		break;
+	case 'x': // "test -x"
+		test_flag (core, r_file_is_executable (arg));
+		break;
+	case 's': // "test -s"
+		test_flag (core, r_file_size (arg) > 0);
+		break;
+	case 'd': // "test -d"
+		test_flag (core, r_file_is_directory (arg));
+		break;
+	default:
+		R_LOG_ERROR ("Unknown flag for test. Use -f, -x or -d");
+		return 1;
+	}
+	return 0;
+}
+
 static int cmd_type(void *data, const char *input) {
 	RCore *core = (RCore *)data;
 	Sdb *TDB = core->anal->sdb_types;
@@ -1181,7 +1218,7 @@ static int cmd_type(void *data, const char *input) {
 				} else if (r_str_startswith (type, "func")) {
 					r_core_cmdf (core, "tfc %s", name);
 				} else {
-					eprintf ("unk\n");
+					R_LOG_ERROR ("unk");
 				}
 			}
 			break;
@@ -1257,6 +1294,9 @@ static int cmd_type(void *data, const char *input) {
 		break;
 	}
 	case 'e': { // "te"
+		if (r_str_startswith (input, "est")) {
+			return cmd_test (core, r_str_trim_head_ro (input + 3));
+		}
 		char *res = NULL, *temp = strchr (input, ' ');
 		Sdb *TDB = core->anal->sdb_types;
 		char *name = temp ? strdup (temp + 1): NULL;
@@ -1397,7 +1437,7 @@ static int cmd_type(void *data, const char *input) {
 		if (res) {
 			r_cons_println (res);
 		} else if (member_name) {
-			eprintf ("Invalid enum member\n");
+			R_LOG_ERROR ("Invalid enum member");
 		}
 		break;
 	}
@@ -1507,7 +1547,7 @@ static int cmd_type(void *data, const char *input) {
 				free (str);
 			}
 		} else {
-			eprintf ("Sandbox: system call disabled\n");
+			R_LOG_ERROR ("Sandbox: system call disabled");
 		}
 		break;
 	// td - parse string with cparse engine and load types from it
@@ -1555,7 +1595,7 @@ static int cmd_type(void *data, const char *input) {
 				}
 				r_list_free (uniq);
 			} else {
-				eprintf ("cannot find function at 0x%08"PFMT64x"\n", addr);
+				R_LOG_ERROR ("Cannot find function at 0x%08"PFMT64x, addr);
 			}
 			}
 			break;
@@ -1659,28 +1699,28 @@ static int cmd_type(void *data, const char *input) {
 				if (ptr && *ptr) {
 					addr = r_num_math (core->num, ptr);
 				} else {
-					eprintf ("tl: Address is unvalid\n");
+					R_LOG_ERROR ("tl: Address is invalid");
 					free (type);
 					break;
 				}
 			}
 			r_str_trim (type);
 			char *tmp = sdb_get (TDB, type, 0);
-			if (tmp && *tmp) {
+			if (R_STR_ISNOTEMPTY (tmp)) {
 				r_type_set_link (TDB, type, addr);
 				RList *fcns = r_anal_get_functions_in (core->anal, core->offset);
 				if (r_list_length (fcns) > 1) {
-					eprintf ("Multiple functions found in here.\n");
+					R_LOG_ERROR ("Multiple functions found in here");
 				} else if (r_list_length (fcns) == 1) {
 					RAnalFunction *fcn = r_list_first (fcns);
 					r_core_link_stroff (core, fcn);
 				} else {
-					eprintf ("Cannot find any function here\n");
+					R_LOG_ERROR ("Cannot find any function here");
 				}
 				r_list_free (fcns);
 				free (tmp);
 			} else {
-				eprintf ("unknown type %s\n", type);
+				R_LOG_ERROR ("unknown type %s", type);
 			}
 			free (type);
 			break;
@@ -1761,7 +1801,7 @@ static int cmd_type(void *data, const char *input) {
 				const char *arg = (type_end) ? type_end + 1 : NULL;
 				char *fmt = r_type_format (TDB, type);
 				if (!fmt) {
-					eprintf ("Cannot find '%s' type\n", type);
+					R_LOG_ERROR ("Cannot find '%s' type", type);
 					free (tmp);
 					free (type);
 					break;
@@ -1818,7 +1858,7 @@ static int cmd_type(void *data, const char *input) {
 			if (*name) {
 				r_anal_remove_parsed_type (core->anal, name);
 			} else {
-				eprintf ("Invalid use of t- . See t-? for help.\n");
+				R_LOG_ERROR ("Invalid use of t-. See t-? for help");
 			}
 		}
 		break;
@@ -1947,14 +1987,16 @@ static int cmd_type(void *data, const char *input) {
 			}
 			free (q);
 		} else {
-			eprintf ("This is not a typedef\n");
+			R_LOG_ERROR ("This is not a typedef");
 		}
 		free (s);
 		break;
 	}
-	default:
 	case '?':
 		r_core_cmd_help (core, help_msg_t);
+		break;
+	default:
+		r_core_return_invalid_command (core, "t", *input);
 		break;
 	}
 	return true;

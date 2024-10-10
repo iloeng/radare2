@@ -49,9 +49,9 @@ static inline bool is_word_break_char(char ch, BreakMode mode) {
 }
 
 static inline void swap_case(int index) {
-	if (IS_UPPER (I.buffer.data[index])) {
+	if (isupper (I.buffer.data[index])) {
 		I.buffer.data[index] += 32;
-	} else if (IS_LOWER (I.buffer.data[index])) {
+	} else if (islower (I.buffer.data[index])) {
 		I.buffer.data[index] -= 32;
 	}
 }
@@ -1170,7 +1170,7 @@ static void __print_prompt(void) {
 		r_cons_gotoxy (0, cons->rows);
 		r_cons_flush ();
 	}
-	printf ("%s", promptcolor ());
+	// printf ("%s", promptcolor ());
 	r_cons_clear_line (0);
 	if (cons->context->color_mode > 0) {
 		printf ("\r%s%s%s", Color_RESET, promptcolor (), I.prompt);
@@ -1431,7 +1431,7 @@ static bool __vi_mode(void) {
 		bool o_do_setup_match = I.history.do_setup_match;
 		I.history.do_setup_match = true;
 		ch = r_cons_readchar ();
-		while (IS_DIGIT (ch)) {			// handle commands like 3b
+		while (isdigit (ch)) {			// handle commands like 3b
 			if (ch == '0' && rep == 0) {	// to handle the command 0
 				break;
 			}

@@ -242,8 +242,8 @@ static void rarch2_list(RAsmState *as, const char *arch) {
 
 static int rasm_show_help(int v) {
 	if (v < 2) {
-		printf ("Usage: rasm2 [-ACdDehLBvw] [-a arch] [-b bits] [-o addr] [-s syntax]\n"
-			"             [-f file] [-F fil:ter] [-i skip] [-l len] 'code'|hex|0101b|-\n");
+		printf ("Usage: rasm2 [-ACdDehLBvw] [-a arch] [-b bits] [-s addr] [-S syntax]\n"
+			"   [-f file] [-o file] [-F fil:ter] [-i skip] [-l len] 'code'|hex|0101b|-\n");
 	}
 	if (v != 1) {
 		printf (" -a [arch]    set architecture to assemble/disassemble (see -L)\n"
@@ -256,21 +256,20 @@ static int rasm_show_help(int v) {
 			" -e           use big endian instead of little endian\n"
 			" -E           display ESIL expression (same input as in -d)\n"
 			" -f [file]    read data from file\n"
-			" -F [in:out]  specify input and/or output filters (att2intel, x86.pseudo, ...)\n"
+			" -F [in:out]  specify input and/or output filters (att2intel, x86.pseudo, ..)\n"
 			" -h, -hh      show this help, -hh for long\n"
 			" -i [len]     ignore/skip N bytes of the input buffer\n"
 			" -j           output in json format\n"
-			" -k [kernel]  select operating system (linux, windows, darwin, ..)\n"
+			" -k [kernel]  select operating system (linux, windows, darwin, android, ios, ..)\n"
 			" -l [len]     input/Output length\n"
-			" -L           list RAsm plugins: (a=asm, d=disasm, A=analyze, e=ESIL)\n"
-			" -LL          list RAnal plugins (see anal.arch=?) combines with -j\n"
-			" -o,-@ [addr] set start address for code (default 0)\n"
-			" -O [file]    output file name (rasm2 -Bf a.asm -O a)\n"
-			" -N           same as r2 -N (or R2_NOPLUGINS) (not load any plugin)\n"
+			" -L           list RArch plugins: (a=asm, d=disasm, e=esil)\n"
+			" -N           same as r2 -N (or R2_NOPLUGINS) (not load any plugin)\n" // -n ?
+			" -o [file]    output file name (rasm2 -Bf a.asm -o a)\n"
 			" -p           run SPP over input for assembly\n"
 			" -q           quiet mode\n"
 			" -r           output in radare commands\n"
-			" -s [syntax]  select syntax (intel, att)\n"
+			" -s,-@ [addr] define initial start/seek address (default 0)\n"
+			" -S [syntax]  select syntax (intel, att)\n"
 			" -v           show version information\n"
 			" -x           use hex dwords instead of hex pairs when assembling.\n"
 			" -w           what's this instruction for? describe opcode\n"
@@ -510,7 +509,7 @@ static int rasm_disasm(RAsmState *as, ut64 addr, const char *buf, int len, int b
 		if (acode) {
 			if (as->oneliner) {
 				r_str_replace_char (acode->assembly, '\n', ';');
-				printf ("%s\"\n", acode->assembly);
+				printf ("%s\n", acode->assembly);
 			} else if (acode->assembly[0]) {
 				printf ("%s", acode->assembly);
 			} else {
@@ -731,7 +730,7 @@ R_API int r_main_rasm2(int argc, const char *argv[]) {
 	}
 
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "a:Ab:Bc:CdDeEf:F:hi:jk:l:L@:o:O:pqrs:vwx");
+	r_getopt_init (&opt, argc, argv, "a:Ab:Bc:CdDeEf:F:hi:jk:l:L@:o:S:pqrs:vwx");
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
 		case 'a':
@@ -788,10 +787,10 @@ R_API int r_main_rasm2(int argc, const char *argv[]) {
 			list_plugins = true;
 			break;
 		case '@':
-		case 'o':
+		case 's':
 			offset = r_num_math (NULL, opt.arg);
 			break;
-		case 'O':
+		case 'o':
 			fd = open (opt.arg, O_TRUNC | O_RDWR | O_CREAT, 0644);
 #ifndef __wasi__
 			if (fd != -1) {
@@ -808,7 +807,7 @@ R_API int r_main_rasm2(int argc, const char *argv[]) {
 		case 'r':
 			rad = true;
 			break;
-		case 's':
+		case 'S':
 			if (*opt.arg == '?') {
 				printf ("att\nintel\nmasm\njz\nregnum\n");
 				__as_free (as);
@@ -854,7 +853,7 @@ R_API int r_main_rasm2(int argc, const char *argv[]) {
 	}
 
 	if (cpu) {
-		r_asm_set_cpu (as->a, cpu);
+		r_arch_config_set_cpu (as->a->config, cpu);
 		// not necessary --- r_arch_config_set_cpu (as->a->config, cpu);
 	}
 	if (arch) {
@@ -881,6 +880,15 @@ R_API int r_main_rasm2(int argc, const char *argv[]) {
 	r_asm_set_bits (as->a, R_STR_ISNOTEMPTY (env_bits)? atoi (env_bits): bits);
 	r_anal_set_bits (as->anal, R_STR_ISNOTEMPTY (env_bits)? atoi (env_bits): bits);
 	as->a->syscall = r_syscall_new ();
+	if (R_STR_ISNOTEMPTY (cpu)) {
+		// check if selected cpu is valid
+		const char *cpus = R_UNWRAP4 (as->anal->arch, session, plugin, cpus);
+		if (cpus && !strstr (cpus, cpu)) {
+			R_LOG_WARN ("Invalid CPU. See -a, -b and asm.cpu values (%s)", cpus);
+		} else {
+			R_LOG_WARN ("Ignored -c asm.cpu, provided plugin exposes no CPUs models");
+		}
+	}
 	r_syscall_setup (as->a->syscall, arch, bits, cpu, kernel);
 	{
 		bool canbebig = r_asm_set_big_endian (as->a, isbig);
@@ -1048,7 +1056,7 @@ R_API int r_main_rasm2(int argc, const char *argv[]) {
 				as->oneliner = true;
 				printf ("e asm.arch=%s\n", arch? arch: R_SYS_ARCH);
 				printf ("e asm.bits=%d\n", bits);
-				printf ("\"wa ");
+				printf ("'wa ");
 			}
 			ret = rasm_disasm (as, offset, (char *)usrstr, len,
 					as->a->config->bits, bin, dis - 1);

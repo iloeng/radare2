@@ -30,7 +30,7 @@ static inline ut64 genmask(int bits) {
 
 static bool isnum(REsil *esil, const char *str, ut64 *num) {
 	R_RETURN_VAL_IF_FAIL (esil && str, false);
-	if (IS_DIGIT (*str)) {
+	if (isdigit (*str)) {
 		if (num) {
 			*num = r_num_get (NULL, str);
 		}
@@ -766,7 +766,7 @@ static bool esil_sf(REsil *esil) {
 
 	char *p_size = r_esil_pop (esil);
 	if (!p_size) {
-		R_LOG_WARN ("$sf cannot pop value");
+		R_LOG_WARN ("$sf cannot pop sign bit value (for example: 31,$s,s,:=)");
 		return false;
 	}
 

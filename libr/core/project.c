@@ -19,7 +19,7 @@ static bool is_valid_project_name(const char *name) {
 	}
 	const char * const extention = r_str_endswith (name, ".zip")? r_str_last (name, ".zip"): NULL;
 	for (; *name && name != extention; name++) {
-		if (IS_DIGIT (*name) || IS_LOWER (*name) || *name == '_') {
+		if (isdigit (*name) || islower (*name) || *name == '_') {
 			continue;
 		}
 		return false;
@@ -435,6 +435,10 @@ static char *get_project_name(const char *prj_script) {
 				file = strdup (buf + 14);
 				break;
 			}
+			if (r_str_startswith (buf, "'e prj.name = ")) {
+				file = strdup (buf + strlen ("'e prj.name"));
+				break;
+			}
 		}
 		fclose (fd);
 	} else {
@@ -484,8 +488,8 @@ static bool store_files_and_maps(RCore *core, RIODesc *desc, ut32 id) {
 	RIOMap *map;
 	if (desc) {
 		// reload bin info
-		r_cons_printf ("\"obf %s\"\n", desc->uri);
-		r_cons_printf ("\"of \\\"%s\\\" %s\"\n", desc->uri, r_str_rwx_i (desc->perm));
+		r_cons_printf ("'obf %s\n", desc->uri);
+		r_cons_printf ("'of \\\"%s\\\" %s\n", desc->uri, r_str_rwx_i (desc->perm));
 		if ((maps = r_io_map_get_by_fd (core->io, id))) { //wtf
 			r_list_foreach (maps, iter, map) {
 				r_cons_printf ("om %d 0x%" PFMT64x " 0x%" PFMT64x " 0x%" PFMT64x " %s%s%s\n", fdc,

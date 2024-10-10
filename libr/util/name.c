@@ -1,13 +1,11 @@
-/* radare - LGPL - Copyright 2009-2021 - pancake */
+/* radare - LGPL - Copyright 2009-2024 - pancake */
 
 #include <r_util.h>
-
-#define FAST_FILTER 1
 
 /* Validate if char is printable , why not use ISPRINTABLE() ?? */
 R_API bool r_name_validate_print(const char ch) {
 	// TODO: support utf8
-	if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || IS_DIGIT (ch)) {
+	if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || isdigit (ch)) {
 		return true;
 	}
 	switch (ch) {
@@ -67,7 +65,7 @@ R_API bool r_name_validate_dash(const char ch) {
 }
 
 R_API bool r_name_validate_char(const char ch) {
-	if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || IS_DIGIT (ch)) {
+	if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || isdigit (ch)) {
 		return true;
 	}
 	return (ch == '.' || ch == ':' || ch == '_');
@@ -180,14 +178,7 @@ R_API bool r_name_filter(char *s, int maxlen) {
 		}
 		count++;
 	}
-#if FAST_FILTER
-	// that flag should be trimmed and checked already
-	// we dont want to iterate over it again
 	return true;
-#else
-	r_str_trim (os);
-	return r_name_check (os);
-#endif
 }
 
 R_API char *r_name_filter_dup(const char *name) {

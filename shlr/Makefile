@@ -49,14 +49,14 @@ CS_ARCHIVE=https://$(CS_URL_BASE)/archive
 CS_UPD=20201203
 # NOTE: when you update CS_TIP or CS_BRA, also update them in shlr/meson.build
 ifeq ($(USE_CSNEXT),1)
-CS_TIP=58528853111377ba2f8ecb781f8d3bdc595900ed
+CS_TIP=a34901e919157c4b0f52e3b93bd977023a97d6b7
 CS_BRA=next
 else
 ifeq ($(USE_CS4),1)
 CS_TIP=0efa3cc530ea188c0e03c945ab884ee19dd16342
 CS_BRA=v4
 else
-CS_TIP=00b961a680c488081a165cc31e98699d45a0a515
+CS_TIP=36a9619b7372c34459d100f1c6fd6eb27326efbc
 CS_BRA=v5
 endif
 endif
@@ -366,19 +366,11 @@ SHLRS+=zip/librz.a
 libr_shlr.${EXT_AR}:
 	rm -rf .libr
 	mkdir .libr
-ifeq ($(CC),emcc)
-	for LIB in ${SHLRS} ; do \
-		if [ -f "$${LIB}" ]; then emcc -emit-llvm -nostdlib -Wl,--whole-archive -o .libr/$$(basename $${LIB}.a).o $${LIB} ; fi ; \
-	done
-	${AR} rs $@ .libr/*.o
-	$(RANLIB) $@
-else
 	for LIB in ${SHLRS} ; do \
 		if [ -f "$${LIB}" ]; then ${PARTIALLD} -o .libr/$$(basename $${LIB}.a).o $${LIB} ; fi ; \
 	done
 	${AR} rs $@ .libr/*.o
 	$(RANLIB) $@
-endif
 
 .PHONY: spp
 

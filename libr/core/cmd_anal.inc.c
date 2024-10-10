@@ -116,6 +116,8 @@ static RCoreHelpMessage help_msg_an = {
 static RCoreHelpMessage help_msg_ano = {
 	"Usage:", "ano", "[*] # function anotations",
 	"ano", "", "show or edit annotations for the current function",
+	"ano*", "", "dump all annotations in ano= commands",
+	"ano=", "[b64text]", "set anotation text in base64 for current function",
 	"anoe", "", "edit annotation",
 	"anos", "", "show annotation",
 	"anol", "", "show first line of function annotation if any",
@@ -167,9 +169,7 @@ static RCoreHelpMessage help_msg_aaf = {
 };
 
 static RCoreHelpMessage help_msg_aaa = {
-	"Usage:", "aa[a[a[a]]]", " # automatically analyze the whole program",
-	"a", " ", "show code analysis statistics",
-	"aa", " ", "alias for 'af@@ sym.*;af@entry0;afva'",
+	"Usage:", "aaa[a[a]]", " # automatically analyze the whole program",
 	"aaa", "", "perform deeper analysis, most common use",
 	"aaaa", "", "same as aaa but adds a bunch of experimental iterations",
 	"aaaaa", "", "refine the analysis to find more functions after aaaa",
@@ -482,7 +482,7 @@ static RCoreHelpMessage help_msg_aea = {
 	"aeaw", " [ops]", "show regs written in N instructions",
 	"aean", " [ops]", "show regs not written in N instructions",
 	"aeaj", " [ops]", "show aea output in JSON format",
-	"aeA", "  [len]", "show regs used in N bytes (subcommands are the same)",
+	"aeA", "  [len]", "show regs used in N bytes (same subcommands as 'aea')",
 	"Legend:", "", "",
 	"I", "", "input registers (read before being set)",
 	"A", "", "all regs accessed",
@@ -587,10 +587,17 @@ static RCoreHelpMessage help_msg_af = {
 	NULL
 };
 
+static RCoreHelpMessage help_msg_afbr = {
+	"Usage:", "afbr", " return addresses for current function",
+	"afbr", "", "show addresses of instructions which leave the function",
+	"afbrb", "", "show addresses of leaving basic blocks with no out edges",
+	".afbr*", "", "set breakpoint on every return address of the function",
+	".afbr-*", "", "remove breakpoint on every return address of the function",
+	NULL
+};
+
 static RCoreHelpMessage help_msg_afb = {
 	"Usage:", "afb", " list basic blocks of given function",
-	".afbr-", "", "set breakpoint on every return address of the function",
-	".afbr-*", "", "remove breakpoint on every return address of the function",
 	"afb", " [addr]", "list basic blocks of function",
 	"afb.", " [addr]", "show info of current basic block",
 	"afb,", "", "show basic blocks of current function in a table",
@@ -602,7 +609,7 @@ static RCoreHelpMessage help_msg_afb = {
 	"afbe", " bbfrom bbto", "add basic-block edge for switch-cases",
 	"afbi", "[j]", "print current basic block information",
 	"afbj", " [addr]", "show basic blocks information in json",
-	"afbr", "", "show addresses of instructions which leave the function",
+	"afbr", "[?]", "show addresses of instructions which leave the function",
 	"afbo", "", "list addresses of each instruction for every basic block in function (see abo)",
 	"afB", " [bits]", "define asm.bits for the given function",
 	NULL
@@ -2026,7 +2033,7 @@ static int var_cmd(RCore *core, const char *str) {
 			r_anal_function_delete_vars_by_kind (fcn, type);
 		} else {
 			RAnalVar *var = NULL;
-			if (IS_DIGIT (str[2])) {
+			if (isdigit (str[2])) {
 				var = r_anal_function_get_var (fcn, type, (int)r_num_math (core->num, str + 1));
 			} else {
 				char *name = r_str_trim_dup (str + 2);
@@ -3241,6 +3248,17 @@ static bool anal_fcn_list_bb(RCore *core, const char *input, bool one) {
 	ut64 addr, bbaddr = UT64_MAX;
 	PJ *pj = NULL;
 
+	if (r_str_startswith (input, "r?")) {
+		r_core_cmd_help (core, help_msg_afbr);
+		return true;
+	}
+	if (*input && input[1] == '?') {
+		char c[5] = "afbr";
+		c[3] = *input;
+		r_core_cmd_help_contains (core, help_msg_afb, c);
+		return true;
+	}
+
 	if (*input == '.') {
 		one = true;
 		input++;
@@ -3347,6 +3365,11 @@ static bool anal_fcn_list_bb(RCore *core, const char *input, bool one) {
 					r_cons_printf ("db 0x%08"PFMT64x"\n", retaddr);
 				} else if (!strcmp (input, "-*")) {
 					r_cons_printf ("db-0x%08"PFMT64x"\n", retaddr);
+				} else if (!strcmp (input, "b")) {
+					r_cons_printf ("0x%08"PFMT64x"\n", b->addr);
+				} else if (*input == '?') {
+					r_core_cmd_help (core, help_msg_afbr);
+					return true;
 				} else {
 					r_cons_printf ("0x%08"PFMT64x"\n", retaddr);
 				}
@@ -4347,7 +4370,7 @@ static void emulate_block(RCore *core, RVecBlocks *blocks, BlockItem *b0) {
 		}
 	} else {
 		// root node, assume initial regstate
-		eprintf ("# root node 0x%"PFMT64x"\n", b0->from);
+		R_LOG_INFO ("# root node 0x%"PFMT64x, b0->from);
 		char *regstate = r_core_cmd_str (core, "dre");
 		r_str_trim (regstate);
 		r_core_cmdf (core, "abe %s @0x%"PFMT64x, regstate, b0->from);
@@ -6712,7 +6735,7 @@ void cmd_anal_reg(RCore *core, const char *str) {
 				for (j = i; str[++j] && str[j] != ','; );
 				if (j - i + 1 <= sizeof name) {
 					r_str_ncpy (name, str + i, j - i + 1);
-					if (IS_DIGIT (name[0])) { // e.g. ar 32
+					if (isdigit (name[0])) { // e.g. ar 32
 						__anal_reg_list (core, R_REG_TYPE_GPR, atoi (name), '\0');
 					} else if (showreg (core, name) > 0) {
 						// e.g. ar rax
@@ -7283,9 +7306,19 @@ static void cmd_esil_mem(RCore *core, const char *input) {
 	size = r_config_get_i (core->config, "esil.stack.size");
 	addr = r_config_get_i (core->config, "esil.stack.addr");
 
-	if (r_io_map_is_mapped (core->io, addr)) {
-		addr = core->offset;
-		r_io_map_locate (core->io, &addr, size, 0x10000000);
+	{
+		ut64 mapinc = r_config_get_i (core->config, "io.mapinc");
+		const ut64 esaddr = addr;
+		if (!r_io_map_locate (core->io, &addr, size, esaddr) || (addr != esaddr)) {
+			addr = esaddr;
+			if (!r_io_map_locate (core->io, &addr, size, mapinc)) {
+				addr = 0ULL;
+				if (!r_io_map_locate (core->io, &addr, size, mapinc)) {
+					R_LOG_ERROR ("Couldn't locate suitable address for aeim stack");
+					return;
+				}
+			}
+		}
 	}
 	patt = r_config_get (core->config, "esil.stack.pattern");
 	r_str_ncpy (nomalloc, input, 255);
@@ -7408,7 +7441,6 @@ static R_TH_LOCAL char *oldregread = NULL;
 static R_TH_LOCAL RList *mymemxsr = NULL;
 static R_TH_LOCAL RList *mymemxsw = NULL;
 
-#define R_NEW_DUP(x) memcpy((void*)malloc (sizeof (x)), &(x), sizeof (x))
 typedef struct {
 	ut64 addr;
 	int size;
@@ -7460,7 +7492,7 @@ static bool myregwrite(REsil *esil, const char *name, ut64 *val) {
 		r_list_pop (stats->regread);
 		R_FREE (oldregread)
 	}
-	if (!IS_DIGIT (*name)) {
+	if (!isdigit (*name)) {
 		if (!contains (stats->regs, name)) {
 			r_list_push (stats->regs, strdup (name));
 		}
@@ -7478,7 +7510,7 @@ static bool myregwrite(REsil *esil, const char *name, ut64 *val) {
 
 static bool myregread(REsil *esil, const char *name, ut64 *val, int *len) {
 	AeaStats *stats = esil->user;
-	if (!IS_DIGIT (*name)) {
+	if (!isdigit (*name)) {
 		if (!contains (stats->inputregs, name)) {
 			if (!contains (stats->regwrite, name)) {
 				r_list_push (stats->inputregs, strdup (name));
@@ -7544,7 +7576,7 @@ static void showmem_json(RList *list, PJ *pj) {
 	pj_end (pj);
 }
 
-static bool cmd_aea(RCore* core, int mode, ut64 addr, int length, const char *esilexpr) {
+static bool cmd_aea_stuff(RCore* core, int mode, ut64 addr, int length, const char *esilexpr, bool maxbytes) {
 	int ptr, ops, ops_end = 0, len, buf_sz;
 	ut64 addr_end;
 	AeaStats stats;
@@ -7559,7 +7591,7 @@ static bool cmd_aea(RCore* core, int mode, ut64 addr, int length, const char *es
 	if (maxopsize < 1) {
 		maxopsize = 16;
 	}
-	if (mode & 1) {
+	if (maxbytes) {
 		// number of bytes / length
 		buf_sz = length;
 	} else {
@@ -7588,7 +7620,7 @@ static bool cmd_aea(RCore* core, int mode, ut64 addr, int length, const char *es
 		free (buf);
 		return false;
 	}
-#	define hasNext(x) (x&1) ? (addr < addr_end) : (ops<ops_end)
+#	define hasNext() (maxbytes) ? (addr < addr_end) : (ops < ops_end)
 
 	mymemxsr = r_list_new ();
 	mymemxsw = r_list_new ();
@@ -7599,7 +7631,7 @@ static bool cmd_aea(RCore* core, int mode, ut64 addr, int length, const char *es
 	esil->cb.hook_mem_read = mymemread;
 	esil->nowrite = true;
 	r_cons_break_push (NULL, NULL);
-	for (ops = ptr = 0; ptr < buf_sz && hasNext (mode); ops++, ptr += len) {
+	for (ops = ptr = 0; ptr < buf_sz && hasNext (); ops++, ptr += len) {
 		if (r_cons_is_breaked ()) {
 			break;
 		}
@@ -7637,9 +7669,6 @@ static bool cmd_aea(RCore* core, int mode, ut64 addr, int length, const char *es
 			break;
 		}
 		r_anal_op_fini (&aop);
-		if (len < 1) {
-			len = 1;
-		}
 	}
 	r_cons_break_pop ();
 	esil->nowrite = false;
@@ -7657,30 +7686,22 @@ static bool cmd_aea(RCore* core, int mode, ut64 addr, int length, const char *es
 			}
 		}
 	}
-	if ((mode >> 5) & 1) {
-		RListIter *iter;
-		AeaMemItem *n;
-		int c = 0;
-		r_cons_printf ("f-mem.*\n");
-		r_list_foreach (mymemxsr, iter, n) {
-			r_cons_printf ("f mem.read.%d 0x%08x @ 0x%08"PFMT64x"\n", c++, n->size, n->addr);
-		}
-		c = 0;
-		r_list_foreach (mymemxsw, iter, n) {
-			r_cons_printf ("f mem.write.%d 0x%08x @ 0x%08"PFMT64x"\n", c++, n->size, n->addr);
-		}
-	}
 
 	/* show registers used */
-	if ((mode >> 1) & 1) {
+	switch (mode) {
+	case 'r':
 		showregs (stats.regread);
-	} else if ((mode >> 2) & 1) {
+		break;
+	case 'w':
 		showregs (stats.regwrite);
-	} else if ((mode >> 3) & 1) {
+		break;
+	case 'n':
 		showregs (regnow);
-	} else if ((mode >> 4) & 1) {
+		break;
+	case 'j':
 		pj = r_core_pj_new (core);
 		if (!pj) {
+			free (regnow);
 			return false;
 		}
 		pj_o (pj);
@@ -7712,9 +7733,23 @@ static bool cmd_aea(RCore* core, int mode, ut64 addr, int length, const char *es
 		pj_end (pj);
 		r_cons_println (pj_string (pj));
 		pj_free (pj);
-	} else if ((mode >> 5) & 1) {
-		// nothing
-	} else {
+		break;
+	case '*':
+		{
+			RListIter *iter;
+			AeaMemItem *n;
+			int c = 0;
+			r_cons_printf ("f-mem.*\n");
+			r_list_foreach (mymemxsr, iter, n) {
+				r_cons_printf ("f mem.read.%d 0x%08x @ 0x%08"PFMT64x"\n", c++, n->size, n->addr);
+			}
+			c = 0;
+			r_list_foreach (mymemxsw, iter, n) {
+				r_cons_printf ("f mem.write.%d 0x%08x @ 0x%08"PFMT64x"\n", c++, n->size, n->addr);
+			}
+		}
+		break;
+	default:
 		if (!r_list_empty (stats.inputregs)) {
 			r_cons_printf (" I: ");
 			showregs (stats.inputregs);
@@ -7747,6 +7782,7 @@ static bool cmd_aea(RCore* core, int mode, ut64 addr, int length, const char *es
 			r_cons_printf ("@W:");
 			showmem (mymemxsw);
 		}
+		break;
 	}
 
 	r_list_free (mymemxsr);
@@ -7781,7 +7817,7 @@ static void cmd_aespc(RCore *core, ut64 addr, ut64 until_addr, int ninstr) {
 	}
 #endif
 	ut8 *buf = malloc (bsize);
-	if (!buf) {
+	if (R_UNLIKELY (!buf)) {
 		R_LOG_ERROR ("Cannot allocate %d byte(s)", bsize);
 		return;
 	}
@@ -7899,8 +7935,7 @@ static void r_anal_aefa(RCore *core, const char *arg) {
 #endif
 }
 
-static void __core_anal_appcall(RCore *core, const char *input) {
-//	r_reg_arena_push (core->dbg->reg);
+static void cmd_aeC(RCore *core, const char *input) {
 	RListIter *iter;
 	char *arg;
 	char *inp = strdup (input);
@@ -7919,8 +7954,6 @@ static void __core_anal_appcall(RCore *core, const char *input) {
 
 	r_reg_setv (core->anal->reg, "SP", sp);
 	free (inp);
-
-//	r_reg_arena_pop (core->dbg->reg);
 }
 
 static void cmd_debug_stack_init(RCore *core, int argc, char **argv, char **envp) {
@@ -8266,8 +8299,10 @@ static void cmd_aeg(RCore *core, int argc, char *argv[]) {
 		break;
 #endif
 	case '?': // "aeg?"
-	default:
 		r_core_cmd_help (core, help_msg_aeg);
+		break;
+	default:
+		r_core_return_invalid_command (core, "aeg", argv[0][1]);
 		break;
 	}
 }
@@ -8293,12 +8328,368 @@ static void esil_compile(RCore *core, const char *input) {
 	r_esil_compiler_free (ec);
 }
 
+static void cmd_aep(RCore *core, const char *input) {
+	ut64 addr = core->offset;
+	switch (input[1]) {
+	case 'a': // "aepa"
+		if (input[2] == ' ') {
+			addr = r_num_math (core->num, input + 2);
+		}
+		// get flag in current offset
+		// find a pin named like the flag, skip dots if any
+		RFlagItem *f = r_flag_get_by_spaces (core->flags, addr, R_FLAGS_FS_SYMBOLS, R_FLAGS_FS_IMPORTS, NULL);
+		if (!f) {
+			f = r_flag_get_i (core->flags, addr);
+		}
+		if (f) {
+			const char *last = r_str_rchr (f->name, NULL, '.');
+			const char *pin_name = last? last + 1: f->name;
+			const char *havepin = r_anal_pin_get (core->anal, pin_name);
+			if (havepin) {
+				r_core_cmdf (core, "aep %s @ 0x%08" PFMT64x, pin_name, addr);
+			}
+		}
+		break;
+	case '.': // "aep."
+		{
+		const char *n = r_anal_pin_at (core->anal, core->offset);
+		if (R_STR_ISNOTEMPTY (n)) {
+			r_cons_printf ("%s\n", n);
+		}
+		}
+		break;
+	case 'c': // "aepc"
+		if (input[2] == ' ' || input[2] == '=') {
+			// seek to this address
+			reg_name_roll_set (core, "PC", r_num_math (core->num, input + 3));
+			r_core_cmd0 (core, ".ar*");
+		} else {
+			r_core_cmd_help_match (core, help_msg_aep, "aepc");
+		}
+		break;
+	case 'k':
+		{
+			char *out = sdb_querys (core->anal->sdb_pins, NULL, 0, r_str_trim_head_ro (input + 3));
+			if (out) {
+				r_cons_printf ("%s\n", out);
+				free (out);
+			}
+		}
+		break;
+	case '*':
+	case 0:
+		r_anal_pin_list (core->anal);
+		break;
+	case '-':
+		if (input[2] == '*') {
+			r_anal_pin_init (core->anal);
+		} else {
+			if (input[2]) {
+				addr = r_num_math (core->num, input + 2);
+			}
+			r_anal_pin_unset (core->anal, addr);
+		}
+		break;
+	case ' ':
+		r_anal_pin (core->anal, addr, input + 2);
+		break;
+	case '?':
+		r_core_cmd_help (core, help_msg_aep);
+		break;
+	default:
+		r_core_return_invalid_command (core, "aep", input[1]);
+		break;
+	}
+}
+
+static void cmd_aes(RCore *core, const char *input) {
+	ut64 until_addr = UT64_MAX;
+	ut64 adr;
+	int off;
+	char *n, *n1;
+	const char *until_expr = NULL;
+	RAnalOp *op = NULL;
+	REsil *esil = core->anal->esil;
+#if 0
+	r_core_cmd0 (core, "ae `aoe@r:PC`");
+	r_core_cmd0 (core, ".ar*");
+	break;
+#endif
+	// aes -> single step
+	// aesb -> single step back
+	// aeso -> single step over
+	// aesu -> until address
+	// aesue -> until esil expression
+	switch (input[1]) {
+	case '?':
+		r_core_cmd_help (core, help_msg_aes);
+		break;
+	case 'l': // "aesl"
+	{
+		ut64 pc = r_debug_reg_get (core->dbg, "PC");
+		RAnalOp *op = r_core_anal_op (core, pc, R_ARCH_OP_MASK_BASIC | R_ARCH_OP_MASK_HINT);
+		if (!op) {
+			break;
+		}
+		r_core_esil_step (core, UT64_MAX, NULL, NULL, false);
+		r_debug_reg_set (core->dbg, "PC", pc + op->size);
+		r_esil_set_pc (esil, pc + op->size);
+		r_core_cmd0 (core, ".ar*");
+		r_anal_op_free (op);
+	} break;
+	case 'b': // "aesb"
+		if (!r_core_esil_step_back (core)) {
+			R_LOG_ERROR ("Cannot step back");
+		}
+		r_core_cmd0 (core, ".ar*");
+		break;
+	case 'B': // "aesB"
+		n = strchr (input + 2, ' ');
+		if (n) {
+			n = (char *)r_str_trim_head_ro (n + 1);
+		}
+		if (n) {
+			char *n2 = strchr (n, ' ');
+			if (n2) {
+				*n2++ = 0;
+			}
+			ut64 off = r_num_math (core->num, n);
+			ut64 nth = n2? r_num_math (core->num, n2): 1;
+			cmd_aespc (core, core->offset, off, (int)nth);
+		} else {
+			r_core_cmd_help_match (core, help_msg_aes, "aesB");
+		}
+		break;
+	case 'u': // "aesu"
+		until_expr = NULL;
+		until_addr = UT64_MAX;
+		if (r_str_endswith (input, "?")) {
+			r_core_cmd_help_match (core, help_msg_aes, "aesu");
+		} else switch (input[2]) {
+		case 'e': // "aesue"
+			until_expr = r_str_trim_head_ro (input + 3);
+			break;
+		case ' ': // "aesu"
+			until_addr = r_num_math (core->num, input + 2);
+			break;
+		case 'o': // "aesuo"
+			step_until_optype (core, r_str_trim_head_ro (input + 3));
+			break;
+		default:
+			r_core_cmd0 (core, "aes?~aesu");
+			break;
+		}
+		if (until_expr || until_addr != UT64_MAX) {
+			r_core_esil_step (core, until_addr, until_expr, NULL, false);
+		}
+		r_core_cmd0 (core, ".ar*");
+		break;
+	case 's': // "aess"
+		if (input[2] == 'u') { // "aessu"
+			if (input[3] == 'e') {
+				until_expr = input + 3;
+			} else {
+				until_addr = r_num_math (core->num, input + 2);
+			}
+			r_core_esil_step (core, until_addr, until_expr, NULL, true);
+		} else {
+			r_core_esil_step (core, UT64_MAX, NULL, NULL, true);
+		}
+		r_core_cmd0 (core, ".ar*");
+		break;
+	case 'o': // "aeso"
+		if (input[2] == 'u') { // "aesou"
+			until_addr = r_num_math (core->num, input + 3);
+			r_core_esil_step (core, until_addr, until_expr, NULL, true);
+			r_core_cmd0 (core, ".ar*");
+		} else if (!input[2] || input[2] == ' ') { // "aeso [addr]"
+			// step over
+			op = r_core_anal_op (core, r_reg_getv (core->anal->reg,
+				r_reg_get_name (core->anal->reg, R_REG_NAME_PC)),
+				R_ARCH_OP_MASK_BASIC | R_ARCH_OP_MASK_HINT);
+			if (op && op->type == R_ANAL_OP_TYPE_CALL) {
+				until_addr = op->addr + op->size;
+			}
+			r_core_esil_step (core, until_addr, until_expr, NULL, false);
+			r_anal_op_free (op);
+			r_core_cmd0 (core, ".ar*");
+		} else {
+			r_core_cmd_help_match (core, help_msg_aes, "aesou");
+		}
+		break;
+	case 'p': //"aesp"
+		n = strchr (input, ' ');
+		n1 = R_STR_ISNOTEMPTY (n) ? strchr (n + 1, ' ') : NULL;
+		if ((!n || !n1) || (!*n || !*n1)) {
+			r_core_cmd_help_match (core, help_msg_aes, "aesp");
+			break;
+		}
+		adr = R_STR_ISNOTEMPTY (n)? r_num_math (core->num, n + 1): 0;
+		off = R_STR_ISNOTEMPTY (n1)? r_num_math (core->num, n1 + 1): 0;
+		cmd_aespc (core, adr, -1, off);
+		break;
+	case ' ':
+		n = strchr (input, ' ');
+		n1 = n ? n + 1: NULL;
+		if (R_STR_ISEMPTY (n1)) {
+			r_core_esil_step (core, until_addr, until_expr, NULL, false);
+			break;
+		}
+		off = r_num_math (core->num, n1);
+		cmd_aespc (core, -1, -1, off);
+		break;
+	default:
+		r_core_esil_step (core, until_addr, until_expr, NULL, false);
+		r_core_cmd0 (core, ".ar*");
+		break;
+	}
+}
+
+static void cmd_aet(RCore *core, const char *input) {
+	REsil *esil = core->anal->esil;
+	switch (input[1]) {
+	case '?':
+		r_core_cmd_help_contains (core, help_msg_ae, "aet");
+		break;
+	case 's': // "aets"
+		switch (input[2]) {
+		case '+': // "aets+"
+#if 0
+			if (!esil) {
+				R_LOG_ERROR ("ESIL is not initialized. Use `aeim` first");
+				break;
+			}
+#endif
+			if (esil->trace) {
+				R_LOG_INFO ("ESIL trace already started");
+				break;
+			}
+			esil->trace = r_esil_trace_new (esil);
+			if (!esil->trace) {
+				break;
+			}
+			r_config_set_b (core->config, "dbg.trace", true);
+			break;
+		case '-': // "aets-"
+			if (!esil) {
+				R_LOG_ERROR ("ESIL is not initialized. Use `aeim` first");
+				break;
+			}
+			if (!esil->trace) {
+				R_LOG_ERROR ("No ESIL trace started");
+				break;
+			}
+			r_esil_trace_free (esil->trace);
+			esil->trace = NULL;
+			r_config_set_b (core->config, "dbg.trace", false);
+			break;
+		case '?':
+			r_core_cmd_help (core, help_msg_aets);
+			break;
+		default:
+			r_core_return_invalid_command (core, "aets", input[2]);
+			break;
+		}
+		break;
+	case 0: // "aet"
+		r_esil_trace_list (core->anal->esil, 0);
+		break;
+	default:
+		r_core_return_invalid_command (core, "aet", input[1]);
+		break;
+	}
+}
+
+// XXX same as aeA but with nops
+static void cmd_aea(RCore *core, const char *input, bool maxbytes) {
+	RReg *reg = core->anal->reg;
+	ut64 pc = r_reg_getv (reg, "PC");
+	RAnalOp *op = r_core_anal_op (core, pc, 0);
+	if (!op) {
+		return;
+	}
+	ut64 newPC = core->offset + op->size;
+	r_reg_setv (reg, "PC", newPC);
+	switch (input[1]) {
+	case '?': // "aea?"
+		r_core_cmd_help (core, help_msg_aea);
+		break;
+	case 'e': // "aeae"
+		cmd_aea_stuff (core, 0, core->offset, -1, r_str_trim_head_ro (input + 2), maxbytes);
+		break;
+	case 'r': // "aear"
+	case 'w': // "aeaw"
+	case 'n': // "aean"
+	case 'j': // "aeaj"
+	case '*': // "aea*"
+		cmd_aea_stuff (core, input[1], core->offset, r_num_math (core->num, input + 2), NULL, maxbytes);
+		break;
+	case 'B': // "aeaB"
+		{
+			bool json = input[2] == 'j';
+			int a = json? 3: 2;
+			ut64 addr = (input[a] == ' ')? r_num_math (core->num, input + a): core->offset;
+			RList *l = r_anal_get_blocks_in (core->anal, addr);
+			RAnalBlock *b;
+			RListIter *iter;
+			r_list_foreach (l, iter, b) {
+				cmd_aea_stuff (core, json? 'j': 0, b->addr, b->size, NULL, maxbytes);
+				break;
+			}
+		}
+		break;
+	case 'f': // "aeaf"
+		{
+			RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, core->offset, -1);
+			if (fcn) {
+				switch (input[2]) {
+				case 'j': // "aeafj"
+					cmd_aea_stuff (core, 'j', r_anal_function_min_addr (fcn), r_anal_function_linear_size (fcn), NULL, maxbytes);
+					break;
+				default:
+					cmd_aea_stuff (core, 0, r_anal_function_min_addr (fcn), r_anal_function_linear_size (fcn), NULL, maxbytes);
+					break;
+				}
+				break;
+			}
+		}
+		break;
+	case 'b': { // "aeab"
+		RAnalBlock *bb = r_anal_bb_from_offset (core->anal, core->offset);
+		if (bb) {
+			switch (input[2]) {
+			case 'j': // "aeabj"
+				cmd_aea_stuff (core, 'j', bb->addr, bb->size, NULL, maxbytes);
+				break;
+			default:
+				cmd_aea_stuff (core, 0, bb->addr, bb->size, NULL, maxbytes);
+				break;
+			}
+		}
+		}
+		break;
+	case 0:
+	case ' ':
+		{
+			const char *arg = input[1]? input + 2: "";
+			ut64 len = r_num_math (core->num, arg);
+			cmd_aea_stuff (core, 0, core->offset, len, NULL, maxbytes);
+		}
+		break;
+	default:
+		if (maxbytes) {
+			r_core_return_invalid_command (core, "aeA", input[1]);
+		} else {
+			r_core_return_invalid_command (core, "aea", input[1]);
+		}
+		break;
+	}
+	r_reg_setv (reg, "PC", pc);
+}
+
 static void cmd_anal_esil(RCore *core, const char *input, bool verbose) {
 	REsil *esil = core->anal->esil;
 	ut64 addr = core->offset;
-	ut64 adr ;
-	char *n, *n1;
-	int off;
 	ut64 until_addr = UT64_MAX;
 
 	const char *until_expr = NULL;
@@ -8312,76 +8703,7 @@ static void cmd_anal_esil(RCore *core, const char *input, bool verbose) {
 		r_core_visual_esil (core, r_str_trim_head_ro (input + 1));
 		break;
 	case 'p': // "aep"
-		switch (input[1]) {
-		case 'a': // "aepa"
-			{
-				ut64 at = core->offset;
-				if (input[2] == ' ') {
-					at = r_num_math (core->num, input + 2);
-				}
-				// get flag in current offset
-				// find a pin named like the flag, skip dots if any
-				RFlagItem *f = r_flag_get_by_spaces (core->flags, at, R_FLAGS_FS_SYMBOLS, R_FLAGS_FS_IMPORTS, NULL);
-				if (!f) {
-					f = r_flag_get_i (core->flags, at);
-				}
-				if (f) {
-					const char *last = r_str_rchr (f->name, NULL, '.');
-					const char *pin_name = last? last + 1: f->name;
-					const char *havepin = r_anal_pin_get (core->anal, pin_name);
-					if (havepin) {
-						r_core_cmdf (core, "aep %s @ 0x%08" PFMT64x, pin_name, at);
-					}
-				}
-			}
-			break;
-		case '.': // "aep."
-			{
-			const char *n = r_anal_pin_at (core->anal, core->offset);
-			if (R_STR_ISNOTEMPTY (n)) {
-				r_cons_printf ("%s\n", n);
-			}
-			}
-			break;
-		case 'c': // "aepc"
-			if (input[2] == ' ' || input[2] == '=') {
-				// seek to this address
-				reg_name_roll_set (core, "PC", r_num_math (core->num, input + 3));
-				r_core_cmd0 (core, ".ar*");
-			} else {
-				r_core_cmd_help_match (core, help_msg_aep, "aepc");
-			}
-			break;
-		case 'k':
-			{
-				char *out = sdb_querys (core->anal->sdb_pins, NULL, 0, r_str_trim_head_ro (input + 3));
-				if (out) {
-					r_cons_printf ("%s\n", out);
-					free (out);
-				}
-			}
-			break;
-		case '*':
-		case 0:
-			r_anal_pin_list (core->anal);
-			break;
-		case '-':
-			if (input[2] == '*') {
-				r_anal_pin_init (core->anal);
-			} else {
-				if (input[2]) {
-					addr = r_num_math (core->num, input + 2);
-				}
-				r_anal_pin_unset (core->anal, addr);
-			}
-			break;
-		case ' ':
-			r_anal_pin (core->anal, addr, input + 2);
-			break;
-		default:
-			r_core_cmd_help (core, help_msg_aep);
-			break;
-		}
+		cmd_aep (core, input);
 		break;
 	case 'r': // "aer"
 		// 'aer' is an alias for 'ar'
@@ -8402,145 +8724,13 @@ static void cmd_anal_esil(RCore *core, const char *input, bool verbose) {
 		r_esil_stack_free (esil);
 		break;
 	case 's': // "aes" "aeso" "aesu" "aesue"
-#if 0
-		r_core_cmd0 (core, "ae `aoe@r:PC`");
-		r_core_cmd0 (core, ".ar*");
-		break;
-#endif
-		// aes -> single step
-		// aesb -> single step back
-		// aeso -> single step over
-		// aesu -> until address
-		// aesue -> until esil expression
-		switch (input[1]) {
-		case '?':
-			r_core_cmd_help (core, help_msg_aes);
-			break;
-		case 'l': // "aesl"
-		{
-			ut64 pc = r_debug_reg_get (core->dbg, "PC");
-			RAnalOp *op = r_core_anal_op (core, pc, R_ARCH_OP_MASK_BASIC | R_ARCH_OP_MASK_HINT);
-			if (!op) {
-				break;
-			}
-			r_core_esil_step (core, UT64_MAX, NULL, NULL, false);
-			r_debug_reg_set (core->dbg, "PC", pc + op->size);
-			r_esil_set_pc (esil, pc + op->size);
-			r_core_cmd0 (core, ".ar*");
-			r_anal_op_free (op);
-		} break;
-		case 'b': // "aesb"
-			if (!r_core_esil_step_back (core)) {
-				R_LOG_ERROR ("Cannot step back");
-			}
-			r_core_cmd0 (core, ".ar*");
-			break;
-		case 'B': // "aesB"
-			n = strchr (input + 2, ' ');
-			if (n) {
-				n = (char *)r_str_trim_head_ro (n + 1);
-			}
-			if (n) {
-				char *n2 = strchr (n, ' ');
-				if (n2) {
-					*n2++ = 0;
-				}
-				ut64 off = r_num_math (core->num, n);
-				ut64 nth = n2? r_num_math (core->num, n2): 1;
-				cmd_aespc (core, core->offset, off, (int)nth);
-			} else {
-				r_core_cmd_help_match (core, help_msg_aes, "aesB");
-			}
-			break;
-		case 'u': // "aesu"
-			until_expr = NULL;
-			until_addr = UT64_MAX;
-			if (r_str_endswith (input, "?")) {
-				r_core_cmd_help_match (core, help_msg_aes, "aesu");
-			} else switch (input[2]) {
-			case 'e': // "aesue"
-				until_expr = r_str_trim_head_ro (input + 3);
-				break;
-			case ' ': // "aesu"
-				until_addr = r_num_math (core->num, input + 2);
-				break;
-			case 'o': // "aesuo"
-				step_until_optype (core, r_str_trim_head_ro (input + 3));
-				break;
-			default:
-				r_core_cmd0 (core, "aes?~aesu");
-				break;
-			}
-			if (until_expr || until_addr != UT64_MAX) {
-				r_core_esil_step (core, until_addr, until_expr, NULL, false);
-			}
-			r_core_cmd0 (core, ".ar*");
-			break;
-		case 's': // "aess"
-			if (input[2] == 'u') { // "aessu"
-				if (input[3] == 'e') {
-					until_expr = input + 3;
-				} else {
-					until_addr = r_num_math (core->num, input + 2);
-				}
-				r_core_esil_step (core, until_addr, until_expr, NULL, true);
-			} else {
-				r_core_esil_step (core, UT64_MAX, NULL, NULL, true);
-			}
-			r_core_cmd0 (core, ".ar*");
-			break;
-		case 'o': // "aeso"
-			if (input[2] == 'u') { // "aesou"
-				until_addr = r_num_math (core->num, input + 3);
-				r_core_esil_step (core, until_addr, until_expr, NULL, true);
-				r_core_cmd0 (core, ".ar*");
-			} else if (!input[2] || input[2] == ' ') { // "aeso [addr]"
-				// step over
-				op = r_core_anal_op (core, r_reg_getv (core->anal->reg,
-					r_reg_get_name (core->anal->reg, R_REG_NAME_PC)),
-					R_ARCH_OP_MASK_BASIC | R_ARCH_OP_MASK_HINT);
-				if (op && op->type == R_ANAL_OP_TYPE_CALL) {
-					until_addr = op->addr + op->size;
-				}
-				r_core_esil_step (core, until_addr, until_expr, NULL, false);
-				r_anal_op_free (op);
-				r_core_cmd0 (core, ".ar*");
-			} else {
-				r_core_cmd_help_match (core, help_msg_aes, "aesou");
-			}
-			break;
-		case 'p': //"aesp"
-			n = strchr (input, ' ');
-			n1 = R_STR_ISNOTEMPTY (n) ? strchr (n + 1, ' ') : NULL;
-			if ((!n || !n1) || (!*n || !*n1)) {
-				r_core_cmd_help_match (core, help_msg_aes, "aesp");
-				break;
-			}
-			adr = R_STR_ISNOTEMPTY (n)? r_num_math (core->num, n + 1): 0;
-			off = R_STR_ISNOTEMPTY (n1)? r_num_math (core->num, n1 + 1): 0;
-			cmd_aespc (core, adr, -1, off);
-			break;
-		case ' ':
-			n = strchr (input, ' ');
-			n1 = n ? n + 1: NULL;
-			if (R_STR_ISEMPTY (n1)) {
-				r_core_esil_step (core, until_addr, until_expr, NULL, false);
-				break;
-			}
-			off = r_num_math (core->num, n1);
-			cmd_aespc (core, -1, -1, off);
-			break;
-		default:
-			r_core_esil_step (core, until_addr, until_expr, NULL, false);
-			r_core_cmd0 (core, ".ar*");
-			break;
-		}
+		cmd_aes (core, input);
 		break;
 	case 'C': // "aeC"
 		if (input[1] == '?') { // "aec?"
 			r_core_cmd_help (core, help_msg_aeC);
 		} else {
-			__core_anal_appcall (core, r_str_trim_head_ro (input + 1));
+			cmd_aeC (core, r_str_trim_head_ro (input + 1));
 		}
 		break;
 	case 'c': // "aec"
@@ -8759,7 +8949,6 @@ static void cmd_anal_esil(RCore *core, const char *input, bool verbose) {
 			} else {
 				R_LOG_ERROR ("No function in this address");
 			}
-		// ab~ninstr[1]
 		}
 		break;
 	case 'f': // "aef"
@@ -8770,170 +8959,14 @@ static void cmd_anal_esil(RCore *core, const char *input, bool verbose) {
 			__anal_esil_function (core, core->offset);
 		} break;
 	case 't': // "aet"
-		switch (input[1]) {
-		case '?':
-			r_core_cmd_help_contains (core, help_msg_ae, "aet");
-			break;
-		case 's': // "aets"
-			switch (input[2]) {
-			case '+': // "aets+"
-#if 0
-				if (!esil) {
-					R_LOG_ERROR ("ESIL is not initialized. Use `aeim` first");
-					break;
-				}
-#endif
-				if (esil->trace) {
-					R_LOG_INFO ("ESIL trace already started");
-					break;
-				}
-				esil->trace = r_esil_trace_new (esil);
-				if (!esil->trace) {
-					break;
-				}
-				r_config_set_b (core->config, "dbg.trace", true);
-				break;
-			case '-': // "aets-"
-				if (!esil) {
-					R_LOG_ERROR ("ESIL is not initialized. Use `aeim` first");
-					break;
-				}
-				if (!esil->trace) {
-					R_LOG_ERROR ("No ESIL trace started");
-					break;
-				}
-				r_esil_trace_free (esil->trace);
-				esil->trace = NULL;
-				r_config_set_b (core->config, "dbg.trace", false);
-				break;
-			default:
-				r_core_cmd_help (core, help_msg_aets);
-				break;
-			}
-			break;
-		case 0: // "aet"
-			r_esil_trace_list (core->anal->esil, 0);
-			break;
-		default:
-			R_LOG_ERROR ("Unknown command");
-			break;
-		}
+		cmd_aet (core, input);
 		break;
 	case 'A': // "aeA"
-		switch (input[1]) {
-		case '?':
-			r_core_cmd_help (core, help_msg_aea);
-			break;
-		case 'r':
-			cmd_aea (core, 1 + (1<<1), core->offset, r_num_math (core->num, input+2), NULL);
-			break;
-		case 'w':
-			cmd_aea (core, 1 + (1<<2), core->offset, r_num_math (core->num, input+2), NULL);
-			break;
-		case 'n':
-			cmd_aea (core, 1 + (1<<3), core->offset, r_num_math (core->num, input+2), NULL);
-			break;
-		case 'j':
-			cmd_aea (core, 1 + (1<<4), core->offset, r_num_math (core->num, input+2), NULL);
-			break;
-		case '*':
-			cmd_aea (core, 1 + (1<<5), core->offset, r_num_math (core->num, input+2), NULL);
-			break;
-		case 'f': {
-			RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, core->offset, -1);
-			if (fcn) {
-				cmd_aea (core, 1, r_anal_function_min_addr (fcn), r_anal_function_linear_size (fcn), NULL);
-			}
-			break;
-			}
-		default:
-			cmd_aea (core, 1, core->offset, (int)r_num_math (core->num, input[1]? input + 2:input + 1), NULL);
-		}
+		cmd_aea (core, input, true);
 		break;
-	case 'a': { // "aea"
-		RReg *reg = core->anal->reg;
-		ut64 pc = r_reg_getv (reg, "PC");
-		RAnalOp *op = r_core_anal_op (core, pc, 0);
-		if (!op) {
-			break;
-		}
-		ut64 newPC = core->offset + op->size;
-		r_reg_setv (reg, "PC", newPC);
-		switch (input[1]) {
-		case '?': // "aea?"
-			r_core_cmd_help (core, help_msg_aea);
-			break;
-		case 'e': // "aeae"
-			cmd_aea (core, 0, core->offset, -1, r_str_trim_head_ro (input + 2));
-			break;
-		case 'r': // "aear"
-			cmd_aea (core, 1<<1, core->offset, r_num_math (core->num, input + 2), NULL);
-			break;
-		case 'w': // "aeaw"
-			cmd_aea (core, 1<<2, core->offset, r_num_math (core->num, input + 2), NULL);
-			break;
-		case 'n': // "aean"
-			cmd_aea (core, 1<<3, core->offset, r_num_math (core->num, input + 2), NULL);
-			break;
-		case 'j': // "aeaj"
-			cmd_aea (core, 1<<4, core->offset, r_num_math (core->num, input + 2), NULL);
-			break;
-		case '*': // "aea*"
-			cmd_aea (core, 1<<5, core->offset, r_num_math (core->num, input + 2), NULL);
-			break;
-		case 'B': { // "aeaB"
-			bool json = input[2] == 'j';
-			int a = json? 3: 2;
-			ut64 addr = (input[a] == ' ')? r_num_math (core->num, input + a): core->offset;
-			RList *l = r_anal_get_blocks_in (core->anal, addr);
-			RAnalBlock *b;
-			RListIter *iter;
-			r_list_foreach (l, iter, b) {
-				int mode = json? (1<<4): 1;
-				cmd_aea (core, mode, b->addr, b->size, NULL);
-				break;
-			}
-			break;
-		}
-		case 'f': { // "aeaf"
-			RAnalFunction *fcn = r_anal_get_fcn_in (core->anal, core->offset, -1);
-			if (fcn) {
-				switch (input[2]) {
-				case 'j': // "aeafj"
-					cmd_aea (core, 1<<4, r_anal_function_min_addr (fcn), r_anal_function_linear_size (fcn), NULL);
-					break;
-				default:
-					cmd_aea (core, 1, r_anal_function_min_addr (fcn), r_anal_function_linear_size (fcn), NULL);
-					break;
-				}
-				break;
-			}
-		}
-			break;
-		case 'b': { // "aeab"
-			RAnalBlock *bb = r_anal_bb_from_offset (core->anal, core->offset);
-			if (bb) {
-				switch (input[2]) {
-				case 'j': // "aeabj"
-					cmd_aea (core, 1 | (1<<4), bb->addr, bb->size, NULL);
-					break;
-				default:
-					cmd_aea (core, 1, bb->addr, bb->size, NULL);
-					break;
-				}
-			}
-			}
-			break;
-		default: {
-			const char *arg = input[1]? input + 2: "";
-			ut64 len = r_num_math (core->num, arg);
-			cmd_aea (core, 0, core->offset, len, NULL);
-			}
-			break;
-		}
-		r_reg_setv (reg, "PC", pc);
+	case 'a': // "aea"
+		cmd_aea (core, input, false);
 		break;
-		  }
 	case 'x':
 		if (input[1] == ' ') { // "aex"
 			char *hex;
@@ -9384,7 +9417,7 @@ static void cmd_anal_opcode(RCore *core, const char *input) {
 				free (ops);
 			}
 		} else if (input[1] == 'l' || input[1] == '=' || input[1] == ' ' || input[1] == 'j') {
-			if (input[1] == ' ' && !IS_DIGIT (input[2])) {
+			if (input[1] == ' ' && !isdigit (input[2])) {
 				r_cons_printf ("%d\n", r_asm_mnemonics_byname (core->rasm, input + 2));
 			} else {
 				// "aoml"
@@ -9434,8 +9467,8 @@ static void cmd_anal_opcode(RCore *core, const char *input) {
 		r_config_set_b (core->config, "asm.lines", false);
 		r_config_set_b (core->config, "asm.xrefs", false);
 
-		hooks = r_core_anal_cycles (core, ccl); //analyse
-		r_cons_clear_line (1);
+		hooks = r_core_anal_cycles (core, ccl); // analyse
+		// r_cons_clear_line (1);
 		r_list_foreach (hooks, iter, hook) {
 			instr_tmp = r_core_disassemble_instr (core, hook->addr, 1);
 			r_cons_printf ("After %4i cycles:\t%s", (ccl - hook->cycles), instr_tmp);
@@ -13645,7 +13678,7 @@ static void cmd_aaa(RCore *core, const char *input) {
 	if (r_cons_is_breaked ()) {
 		goto jacuzzi;
 	}
-	r_cons_clear_line (1);
+//	r_cons_clear_line (1);
 	const bool cfg_debug = r_config_get_b (core->config, "cfg.debug");
 	if (*input == 'a') { // "aaa" .. which is checked just in the case above
 		if (r_str_startswith (r_config_get (core->config, "bin.lang"), "go")) {
@@ -13998,14 +14031,19 @@ static int cmd_anal_all(RCore *core, const char *input) {
 			r_core_cmd_help (core, help_msg_aan);
 			break;
 		case 'f': // "aanf" same as "aan" but more friendly
-		default: // "aan"
+		case 0: // "aan"
 			r_core_anal_autoname_all_fcns (core);
+			break;
+		default:
+			r_core_return_invalid_command (core, "aan", input[1]);
 			break;
 		}
 		break;
 	case 'p': // "aap"
 		if (input[1] == '?') {
 			r_core_cmd_help_match (core, help_msg_aa, "aap");
+		} else if (input[1]) {
+			r_core_return_invalid_command (core, "aap", input[1]);
 		} else {
 			r_core_search_preludes (core, false);
 		}
@@ -14146,16 +14184,26 @@ static int cmd_anal_all(RCore *core, const char *input) {
 		}
 		break;
 	case 'r': // "aar"
-		if (input[1] == '?') {
-			r_core_cmd_help (core, help_msg_aar);
-		} else if (input[1] == 'r') { // "aarr"
-			anal_aarr (core);
-		} else {
+		switch (input[1]) {
+		case 0:
+		case ' ':
+		case '*':
+		case 'j':
 			(void)r_core_anal_refs (core, input + 1);
+			break;
+		case 'r':
+			anal_aarr (core);
+			break;
+		case '?':
+			r_core_cmd_help (core, help_msg_aar);
+			break;
+		default:
+			r_core_return_invalid_command (core, "aar", input[1]);
+			break;
 		}
 		break;
 	default:
-		r_core_cmd_help (core, help_msg_aa);
+		r_core_return_invalid_command (core, "aa", input[0]);
 		break;
 	}
 
@@ -15247,9 +15295,15 @@ static int cmd_anal(void *data, const char *input) {
 	case 'C': // "aC"
 		cmd_anal_aC (core, input + 1);
 		break;
-	case 'i': cmd_anal_info (core, input + 1); break; // "ai"
-	case 'r': cmd_anal_reg (core, input + 1); break;  // "ar"
-	case 'e': cmd_anal_esil (core, input + 1, true); break; // "ae"
+	case 'i': // "ai"
+	       	cmd_anal_info (core, input + 1);
+		break;
+	case 'r': // "ar"
+		cmd_anal_reg (core, input + 1);
+		break;
+	case 'e': // "ae"
+		cmd_anal_esil (core, input + 1, true);
+		break;
 	case 'L':
 		switch (input[1]) {
 		case 'j':
@@ -15441,7 +15495,9 @@ static int cmd_anal(void *data, const char *input) {
 		}
 		break;
 	default:
-		r_core_cmd_help (core, help_msg_a);
+		// r_core_cmd_help (core, help_msg_a);
+		R_LOG_ERROR ("Invalid `a` subcommand '%c', try `a?`", *input);
+		r_core_return_value (core, 1);
 		break;
 	}
 	if (tbs != core->blocksize) {
